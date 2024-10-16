@@ -1,0 +1,78 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Setup-Build-Publish
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the master branch
+on:
+  push:
+    branches:
+      - 'release/**'
+      - master
+      - develop
+  pull_request:
+    branches:
+      - 'release/**'
+      - master
+      - develop
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set branch env
+        if: startsWith(github.ref, 'refs/heads/release/') != true
+        run: echo "tag=$(echo ${GITHUB_REF#refs/*/})" >> $GITHUB_ENV
+      - name: Set release env
+        if: startsWith(github.ref, 'refs/heads/release/')
+        run: echo "tag=$(echo ${GITHUB_REF#refs/*/release/})"  >> $GITHUB_ENV
+      - name: Github short sha
+        run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-6`" >> $GITHUB_ENV
+      - name: Get commit sha
+        id: version
+        run: echo "::set-output name=sha::$(echo ${GITHUB_SHA} | cut -c1-6)"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role
+          aws-region: eu-west-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build dev docker and push to registry
+        run: |
+          docker build -t $SERVICE .
+          docker tag $SERVICE:latest $REGISTRY/$SERVICE:${{ env.tag }}-${{ steps.version.outputs.sha }}
+          docker push $REGISTRY/$SERVICE:${{ env.tag }}-${{ steps.version.outputs.sha }}
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SERVICE: seon-clustering
+
+      - name: Update dev platform repo
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          cd ..
+          git config --global user.email "oleksandr.korliuk@busyrebel.io"
+          git config --global user.name "korliuk-busyrebel"
+          git clone https://korliuk-busyrebel:${{ secrets.GIT_PASS }}@github.com/korliuk-busyrebel/seon-platform.git
+          cd seon-platform
+          git checkout master
+          sh change_tag.sh image tag ${{ env.tag }}-${{ steps.version.outputs.sha }} charts/${{ env.CHART }}/values-${{ env.ENV }}.yaml
+          git add .
+          git commit -m "${{ env.CHART }} ${{ env.tag }}-${{ steps.version.outputs.sha }} update Argo config"
+          git push -q https://korliuk-busyrebel:${{ secrets.GIT_PASS }}@github.com/korliuk-busyrebel/seon-platform.git master
+        env:
+          ENV: dev
+          CHART: seon-clustering
+
+
+
