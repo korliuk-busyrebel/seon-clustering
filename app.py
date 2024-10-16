@@ -32,30 +32,36 @@ def load_column_weights(weights_file_path):
 
 # Apply column weights during preprocessing
 def preprocess_data(df, column_weights):
-    # Normalize numerical data
+    # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    df[numeric_cols] = df[numeric_cols].fillna(0)  # Handle missing data
-
-    # Encode categorical/string columns
     categorical_cols = df.select_dtypes(include=['object']).columns
+
+    # Fill missing values for numeric columns
+    df[numeric_cols] = df[numeric_cols].fillna(0)
+
+    # Encode categorical columns
     for col in categorical_cols:
-        df[col] = df[col].fillna('missing')  # Fill NaN with 'missing'
+        df[col] = df[col].fillna('missing')  # Replace NaN with 'missing'
         le = LabelEncoder()
         try:
-            df[col] = le.fit_transform(df[col].astype(str))  # Convert strings to numbers
+            # Ensure all entries are strings before encoding
+            df[col] = le.fit_transform(df[col].astype(str))
         except Exception as e:
             print(f"Error encoding column {col}: {e}")
 
+    # Now combine the numeric and encoded categorical columns
+    all_columns = numeric_cols.union(categorical_cols)
+
     # Scale the entire dataset
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df[numeric_cols.union(categorical_cols)])
+    df_scaled = scaler.fit_transform(df[all_columns])
 
-    # Apply weights to each column
-    for col in df.columns:
+    # Apply column weights
+    for col in all_columns:
         if col in column_weights:
             df_scaled[:, df.columns.get_loc(col)] *= column_weights[col]
 
-    return pd.DataFrame(df_scaled, columns=numeric_cols.union(categorical_cols))
+    return pd.DataFrame(df_scaled, columns=all_columns)
 
 
 # Endpoint to create initial clusters from CSV
