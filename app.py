@@ -13,13 +13,13 @@ app = FastAPI()
 # Get environment variables for Elasticsearch connection and index
 ES_HOST = os.getenv("ES_HOST", "localhost")
 ES_PORT = os.getenv("ES_PORT", 9200)
-ES_INDEX = os.getenv("ES_INDEX", "clustered_data")  # Default index name if not provided
-ES_SCHEME = os.getenv("ES_SCHEME", "http")  # Default scheme is http
+ES_INDEX = os.getenv("ES_INDEX", "clustered_data")
+ES_SCHEME = os.getenv("ES_SCHEME", "http")
 
-# Connect to Elasticsearch (OpenSearch compatible)
+# Convert ES_PORT to an integer
 es = Elasticsearch(hosts=[{
     'host': ES_HOST,
-    'port': ES_PORT,
+    'port': int(ES_PORT),  # Ensure the port is passed as an integer
     'scheme': ES_SCHEME
 }])
 
@@ -34,7 +34,7 @@ def load_column_weights(weights_file_path):
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    categorical_cols = df.select_dtypes(include=['object']).columns
+    categorical_cols = df.select_dtypes(include(['object'])).columns
 
     # Fill missing values for numeric columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
@@ -44,7 +44,6 @@ def preprocess_data(df, column_weights):
         df[col] = df[col].fillna('missing')  # Replace NaN with 'missing'
         le = LabelEncoder()
         try:
-            # Ensure all entries are strings before encoding
             df[col] = le.fit_transform(df[col].astype(str))
         except Exception as e:
             print(f"Error encoding column {col}: {e}")
@@ -67,21 +66,16 @@ def preprocess_data(df, column_weights):
 # Endpoint to create initial clusters from CSV
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
-    # Read the CSV file
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
-    # Load the column weights from an external file
-    column_weights = load_column_weights('/app/column_weights.json')  # Adjust path as needed
+    column_weights = load_column_weights('/app/column_weights.json')
 
-    # Preprocess the data (normalize, encode, and apply weights)
     df_preprocessed = preprocess_data(df, column_weights)
 
-    # Apply DBSCAN clustering
     clustering_model = DBSCAN(eps=0.5, min_samples=5)
     df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
-    # Store clusters in OpenSearch
     for index, row in df.iterrows():
         doc = row.to_dict()
         es.index(index=ES_INDEX, id=index, body=doc)
@@ -92,28 +86,20 @@ async def create_clusters(file: UploadFile = File(...)):
 # Endpoint to classify a single record into clusters
 @app.post("/classify-record/")
 async def classify_record(record: dict):
-    # Convert record into DataFrame
     record_data = pd.DataFrame([record])
+    column_weights = load_column_weights('/app/column_weights.json')
 
-    # Load the column weights from an external file
-    column_weights = load_column_weights('/app/column_weights.json')  # Adjust path as needed
-
-    # Preprocess the data (normalize, encode, and apply weights)
     record_preprocessed = preprocess_data(record_data, column_weights)
 
-    # Fetch the latest cluster data from OpenSearch
-    res = es.search(index=ES_INDEX, size=10000)  # Limit to 10000 for now
+    res = es.search(index=ES_INDEX, size=10000)
     clustered_data = [hit['_source'] for hit in res['hits']['hits']]
     clustered_df = pd.DataFrame(clustered_data)
 
-    # Preprocess fetched clustered data
     clustered_df_preprocessed = preprocess_data(clustered_df, column_weights)
 
-    # Use the previously fitted DBSCAN model to predict the cluster
     clustering_model = DBSCAN(eps=0.5, min_samples=5)
     clustering_model.fit(clustered_df_preprocessed)
 
-    # Classify the new record
     predicted_cluster = clustering_model.fit_predict(
         pd.concat([clustered_df_preprocessed, record_preprocessed])
     )[-1]
