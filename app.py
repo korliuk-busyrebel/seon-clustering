@@ -14,9 +14,14 @@ app = FastAPI()
 ES_HOST = os.getenv("ES_HOST", "localhost")
 ES_PORT = os.getenv("ES_PORT", 9200)
 ES_INDEX = os.getenv("ES_INDEX", "clustered_data")  # Default index name if not provided
+ES_SCHEME = os.getenv("ES_SCHEME", "http")  # Default scheme is http
 
 # Connect to Elasticsearch (OpenSearch compatible)
-es = Elasticsearch(hosts=[{'host': ES_HOST, 'port': ES_PORT}])
+es = Elasticsearch(hosts=[{
+    'host': ES_HOST,
+    'port': ES_PORT,
+    'scheme': ES_SCHEME
+}])
 
 
 # Load column weights from an external JSON file
