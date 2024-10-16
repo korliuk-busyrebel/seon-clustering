@@ -34,7 +34,7 @@ def load_column_weights(weights_file_path):
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    categorical_cols = df.select_dtypes(include(['object'])).columns
+    categorical_cols = df.select_dtypes(include=['object']).columns  # Corrected line
 
     # Fill missing values for numeric columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
