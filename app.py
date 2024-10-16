@@ -34,7 +34,7 @@ def load_column_weights(weights_file_path):
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    categorical_cols = df.select_dtypes(include=['object']).columns  # Corrected line
+    categorical_cols = df.select_dtypes(include=['object']).columns
 
     # Fill missing values for numeric columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
@@ -56,9 +56,9 @@ def preprocess_data(df, column_weights):
     df_scaled = scaler.fit_transform(df[all_columns])
 
     # Apply column weights
-    for col in all_columns:
+    for idx, col in enumerate(all_columns):
         if col in column_weights:
-            df_scaled[:, df.columns.get_loc(col)] *= column_weights[col]
+            df_scaled[:, idx] *= column_weights[col]
 
     return pd.DataFrame(df_scaled, columns=all_columns)
 
