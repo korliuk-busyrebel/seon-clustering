@@ -41,18 +41,21 @@ def preprocess_data(df, column_weights):
     for col in categorical_cols:
         df[col] = df[col].fillna('missing')  # Fill NaN with 'missing'
         le = LabelEncoder()
-        df[col] = le.fit_transform(df[col].astype(str))  # Convert strings to numbers
+        try:
+            df[col] = le.fit_transform(df[col].astype(str))  # Convert strings to numbers
+        except Exception as e:
+            print(f"Error encoding column {col}: {e}")
 
     # Scale the entire dataset
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df)
+    df_scaled = scaler.fit_transform(df[numeric_cols.union(categorical_cols)])
 
     # Apply weights to each column
     for col in df.columns:
         if col in column_weights:
             df_scaled[:, df.columns.get_loc(col)] *= column_weights[col]
 
-    return pd.DataFrame(df_scaled, columns=df.columns)
+    return pd.DataFrame(df_scaled, columns=numeric_cols.union(categorical_cols))
 
 
 # Endpoint to create initial clusters from CSV
