@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from elasticsearch import Elasticsearch
+from opensearchpy import OpenSearch  # Updated import
 from io import StringIO
 import pandas as pd
 import json
@@ -10,18 +10,23 @@ import os
 # Initialize FastAPI app
 app = FastAPI()
 
-# Get environment variables for Elasticsearch connection and index
-ES_HOST = os.getenv("ES_HOST", "localhost")
-ES_PORT = os.getenv("ES_PORT", 9200)
-ES_INDEX = os.getenv("ES_INDEX", "clustered_data")
-ES_SCHEME = os.getenv("ES_SCHEME", "http")
+# Get environment variables for OpenSearch connection and index
+OS_HOST = os.getenv("OS_HOST", "localhost")
+OS_PORT = os.getenv("OS_PORT", 9200)
+OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+OS_SCHEME = os.getenv("OS_SCHEME", "http")
 
-# Convert ES_PORT to an integer
-es = Elasticsearch(hosts=[{
-    'host': ES_HOST,
-    'port': int(ES_PORT),
-    'scheme': ES_SCHEME
-}], timeout=60)
+# Initialize OpenSearch client
+client = OpenSearch(
+    hosts=[{
+        'host': OS_HOST,
+        'port': int(OS_PORT),
+        'scheme': OS_SCHEME
+    }],
+    timeout=60,
+    use_ssl=True if OS_SCHEME == "https" else False,
+    verify_certs=False  # You might want to change this in production
+)
 
 
 # Load column weights from an external JSON file
@@ -78,9 +83,9 @@ async def create_clusters(file: UploadFile = File(...)):
 
     for index, row in df.iterrows():
         doc = row.to_dict()
-        es.index(index=ES_INDEX, id=index, body=doc)
+        client.index(index=OS_INDEX, id=index, body=doc)  # Updated client
 
-    return {"message": f"Clusters created and stored in OpenSearch index {ES_INDEX}"}
+    return {"message": f"Clusters created and stored in OpenSearch index {OS_INDEX}"}
 
 
 # Endpoint to classify a single record into clusters
@@ -91,7 +96,7 @@ async def classify_record(record: dict):
 
     record_preprocessed = preprocess_data(record_data, column_weights)
 
-    res = es.search(index=ES_INDEX, size=10000)
+    res = client.search(index=OS_INDEX, size=10000)  # Updated client
     clustered_data = [hit['_source'] for hit in res['hits']['hits']]
     clustered_df = pd.DataFrame(clustered_data)
 
