@@ -19,9 +19,9 @@ ES_SCHEME = os.getenv("ES_SCHEME", "http")
 # Convert ES_PORT to an integer
 es = Elasticsearch(hosts=[{
     'host': ES_HOST,
-    'port': int(ES_PORT),  # Ensure the port is passed as an integer
+    'port': int(ES_PORT),
     'scheme': ES_SCHEME
-}])
+}], timeout=60)
 
 
 # Load column weights from an external JSON file
