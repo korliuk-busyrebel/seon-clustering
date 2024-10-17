@@ -15,19 +15,18 @@ OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
+OS_USERNAME = os.getenv("OS_USERNAME", "admin")  # OpenSearch username
+OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")  # OpenSearch password
 
-# Initialize OpenSearch client
-client = OpenSearch(
-    hosts=[{
-        'host': OS_HOST,
-        'port': int(OS_PORT),
-        'scheme': OS_SCHEME
-    }],
-    timeout=60,
-    use_ssl=True if OS_SCHEME == "https" else False,
-    verify_certs=False  # You might want to change this in production
+# Initialize OpenSearch client with basic authentication
+os_client = OpenSearch(
+    hosts=[{'host': OS_HOST, 'port': int(OS_PORT)}],
+    http_auth=(OS_USERNAME, OS_PASSWORD),  # Add the username and password here
+    use_ssl=(OS_SCHEME == 'https'),  # Enable SSL if the scheme is https
+    verify_certs=False,  # Disable SSL verification if using self-signed certificates (Not recommended for production)
+    scheme=OS_SCHEME,
+    timeout=60
 )
-
 
 # Load column weights from an external JSON file
 def load_column_weights(weights_file_path):
