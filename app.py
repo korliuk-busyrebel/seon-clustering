@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.impute import SimpleImputer
 from opensearchpy import OpenSearch  # Updated import
 from io import StringIO
 import pandas as pd
@@ -35,17 +36,20 @@ def load_column_weights(weights_file_path):
 
 
 # Apply column weights during preprocessing
+# Apply column weights during preprocessing
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
     categorical_cols = df.select_dtypes(include=['object']).columns
 
-    # Fill missing values for numeric columns
-    df[numeric_cols] = df[numeric_cols].fillna(0)
+    # Fill missing values for numeric columns with the mean
+    numeric_imputer = SimpleImputer(strategy='mean')
+    df[numeric_cols] = numeric_imputer.fit_transform(df[numeric_cols])
 
-    # Encode categorical columns
+    # Fill missing values for categorical columns with the most frequent value
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
     for col in categorical_cols:
-        df[col] = df[col].fillna('missing')  # Replace NaN with 'missing'
+        df[col] = categorical_imputer.fit_transform(df[[col]])
         le = LabelEncoder()
         try:
             df[col] = le.fit_transform(df[col].astype(str))
