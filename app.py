@@ -19,7 +19,7 @@ OS_USERNAME = os.getenv("OS_USERNAME", "admin")  # OpenSearch username
 OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")  # OpenSearch password
 
 # Initialize OpenSearch client with basic authentication
-os_client = OpenSearch(
+client = OpenSearch(
     hosts=[{'host': OS_HOST, 'port': int(OS_PORT)}],
     http_auth=(OS_USERNAME, OS_PASSWORD),  # Add the username and password here
     use_ssl=(OS_SCHEME == 'https'),  # Enable SSL if the scheme is https
