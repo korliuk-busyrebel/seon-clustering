@@ -36,7 +36,7 @@ def load_column_weights(weights_file_path):
 
 
 # Apply column weights during preprocessing
-# Apply column weights during preprocessing
+
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
@@ -49,7 +49,8 @@ def preprocess_data(df, column_weights):
     # Fill missing values for categorical columns with the most frequent value
     categorical_imputer = SimpleImputer(strategy='most_frequent')
     for col in categorical_cols:
-        df[col] = categorical_imputer.fit_transform(df[[col]])
+        # Make sure to reshape the result from the imputer if needed
+        df[col] = categorical_imputer.fit_transform(df[[col]]).ravel()
         le = LabelEncoder()
         try:
             df[col] = le.fit_transform(df[col].astype(str))
@@ -69,7 +70,6 @@ def preprocess_data(df, column_weights):
             df_scaled[:, idx] *= column_weights[col]
 
     return pd.DataFrame(df_scaled, columns=all_columns)
-
 
 # Endpoint to create initial clusters from CSV
 @app.post("/create-clusters/")
