@@ -49,7 +49,6 @@ def preprocess_data(df, column_weights):
     # Fill missing values for categorical columns with the most frequent value
     categorical_imputer = SimpleImputer(strategy='most_frequent')
     for col in categorical_cols:
-        # Make sure to reshape the result from the imputer if needed
         df[col] = categorical_imputer.fit_transform(df[[col]]).ravel()
         le = LabelEncoder()
         try:
@@ -57,19 +56,24 @@ def preprocess_data(df, column_weights):
         except Exception as e:
             print(f"Error encoding column {col}: {e}")
 
-    # Now combine the numeric and encoded categorical columns
+    # Combine numeric and encoded categorical columns
     all_columns = numeric_cols.union(categorical_cols)
 
-    # Scale the entire dataset
+    # Filter out columns with weight <= 0.0
+    selected_columns = [col for col in all_columns if column_weights.get(col, 0.0) > 0.0]
+
+    if not selected_columns:
+        raise ValueError("No columns with weight > 0.0 found.")
+
+    # Scale only the selected columns
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df[all_columns])
+    df_scaled = scaler.fit_transform(df[selected_columns])
 
     # Apply column weights
-    for idx, col in enumerate(all_columns):
-        if col in column_weights:
-            df_scaled[:, idx] *= column_weights[col]
+    for idx, col in enumerate(selected_columns):
+        df_scaled[:, idx] *= column_weights[col]
 
-    return pd.DataFrame(df_scaled, columns=all_columns)
+    return pd.DataFrame(df_scaled, columns=selected_columns)
 
 # Endpoint to create initial clusters from CSV
 @app.post("/create-clusters/")
@@ -91,25 +95,35 @@ async def create_clusters(file: UploadFile = File(...)):
     return {"message": f"Clusters created and stored in OpenSearch index {OS_INDEX}"}
 
 
-# Endpoint to classify a single record into clusters
+# Endpoint to classify a single record using OpenSearch k-NN
 @app.post("/classify-record/")
 async def classify_record(record: dict):
     record_data = pd.DataFrame([record])
     column_weights = load_column_weights('/app/column_weights.json')
 
+    # Preprocess the record to get the feature vector
     record_preprocessed = preprocess_data(record_data, column_weights)
 
-    res = client.search(index=OS_INDEX, size=10000)  # Updated client
-    clustered_data = [hit['_source'] for hit in res['hits']['hits']]
-    clustered_df = pd.DataFrame(clustered_data)
+    # Convert the preprocessed record to a list (vector) for k-NN search
+    vector = record_preprocessed.values[0].tolist()
 
-    clustered_df_preprocessed = preprocess_data(clustered_df, column_weights)
+    # Perform k-NN search in OpenSearch to find the nearest cluster
+    k_nn_query = {
+        "size": 1,  # Retrieve the closest neighbor
+        "_source": False,  # Optionally, control which fields are returned
+        "knn": {
+            "field": "vector",  # Field where you stored your vector data
+            "query_vector": vector,  # Vector for comparison
+            "k": 1,  # Number of nearest neighbors to retrieve
+            "num_candidates": 100  # Optional: number of top candidates to consider
+        }
+    }
 
-    clustering_model = DBSCAN(eps=0.5, min_samples=5)
-    clustering_model.fit(clustered_df_preprocessed)
+    # Search in OpenSearch using k-NN
+    response = client.search(index=OS_INDEX, body=k_nn_query)
+    nearest_neighbor = response['hits']['hits'][0]
 
-    predicted_cluster = clustering_model.fit_predict(
-        pd.concat([clustered_df_preprocessed, record_preprocessed])
-    )[-1]
+    # Retrieve the cluster information from the nearest neighbor
+    predicted_cluster = nearest_neighbor['_id']  # Or any other relevant cluster field
 
-    return {"cluster": int(predicted_cluster)}
+    return {"cluster": predicted_cluster}
