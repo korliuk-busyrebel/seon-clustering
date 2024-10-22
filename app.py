@@ -83,10 +83,14 @@ def reduce_dimensions_by_clusters(df, clusters, method="tsne", n_components=2):
     unique_clusters = set(clusters)
     for cluster in unique_clusters:
         cluster_data = df[clusters == cluster]
+
+        # Adjust perplexity based on the number of samples in the cluster
+        perplexity = min(30, len(cluster_data) - 1)  # Ensuring perplexity is less than the number of samples
+
         if method == "pca":
             reducer = PCA(n_components=n_components)
         elif method == "tsne":
-            reducer = TSNE(n_components=n_components, perplexity=30, learning_rate=200)
+            reducer = TSNE(n_components=n_components, perplexity=perplexity, learning_rate=200)
         else:
             raise ValueError("Unknown method")
 
@@ -97,7 +101,6 @@ def reduce_dimensions_by_clusters(df, clusters, method="tsne", n_components=2):
         df_reduced = pd.concat([df_reduced, reduced_df])
 
     return df_reduced.reset_index(drop=True)
-
 
 # Function to find optimal eps and min_samples
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
