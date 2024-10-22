@@ -86,9 +86,28 @@ def reduce_dimensions(df, method="pca", n_components=2):
     reduced_data = reducer.fit_transform(df)
     return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
+
+# Function to dynamically adjust eps and min_samples until all points are clustered
+def cluster_with_dbscan(df_preprocessed, initial_eps=0.5, min_samples=5, max_eps=20.0, step=0.5):
+    eps = initial_eps
+    while eps <= max_eps:
+        # Apply DBSCAN clustering
+        clustering_model = DBSCAN(eps=eps, min_samples=min_samples)
+        clusters = clustering_model.fit_predict(df_preprocessed)
+
+        # If all points are assigned to clusters (no points with label -1), break the loop
+        if -1 not in clusters:
+            return clusters, eps
+
+        # Increase eps and try again
+        eps += step
+
+    # If max_eps is reached and still not all points are clustered, return the best result
+    return clusters, eps
+
 # Endpoint to create initial clusters from CSV and store reduced-dimension data
 @app.post("/create-clusters/")
-async def create_clusters(file: UploadFile = File(...)):
+async def create_clusters(file: UploadFile = File(...), initial_eps: float = 0.5, min_samples: int = 5):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
@@ -98,9 +117,11 @@ async def create_clusters(file: UploadFile = File(...)):
     # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
-    # Apply DBSCAN clustering
-    clustering_model = DBSCAN(eps=2, min_samples=2)
-    df['cluster'] = clustering_model.fit_predict(df_preprocessed)
+    # Apply dynamic DBSCAN clustering (adjust eps and min_samples)
+    clusters, final_eps = cluster_with_dbscan(df_preprocessed, initial_eps=initial_eps, min_samples=min_samples)
+
+    # Assign clusters to the dataframe
+    df['cluster'] = clusters
 
     # Reduce dimensions using PCA (you can also use t-SNE)
     df_reduced = reduce_dimensions(df_preprocessed, method="pca", n_components=2)
@@ -117,7 +138,7 @@ async def create_clusters(file: UploadFile = File(...)):
         client.index(index=REDUCED_INDEX, id=index, body=doc)  # Store in the reduced-dimension index
 
     return {
-        "message": f"Clusters created and stored in {OS_INDEX} and reduced dimension data stored in {REDUCED_INDEX}"
+        "message": f"Clusters created with final eps={final_eps} and stored in {OS_INDEX}. Reduced dimension data stored in {REDUCED_INDEX}."
     }
 
 # Endpoint to classify a single record using OpenSearch k-NN
