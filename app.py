@@ -4,7 +4,8 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-from opensearchpy import OpenSearch  # Updated import
+from sklearn.neighbors import NearestNeighbors
+from opensearchpy import OpenSearch
 from io import StringIO
 import pandas as pd
 import json
@@ -120,16 +121,36 @@ def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5
 
     return optimal_eps, optimal_min_samples
 
+# Function to reassign noise points (-1) to nearest cluster
+def assign_noise_points(df_preprocessed, clusters):
+    noise_indices = (clusters == -1)
+    non_noise_indices = (clusters != -1)
+
+    if sum(noise_indices) == 0:
+        return clusters
+
+    # Fit Nearest Neighbors on non-noise points
+    nearest_neighbors = NearestNeighbors(n_neighbors=1)
+    nearest_neighbors.fit(df_preprocessed[non_noise_indices])
+
+    # Find the nearest non-noise point for each noise point
+    distances, indices = nearest_neighbors.kneighbors(df_preprocessed[noise_indices])
+
+    # Reassign noise points to the nearest cluster
+    for i, idx in enumerate(indices):
+        nearest_cluster = clusters[non_noise_indices][idx][0]
+        clusters[noise_indices][i] = nearest_cluster
+
+    return clusters
+
 # Endpoint to create clusters from CSV
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
-    # Load column weights
     column_weights = load_column_weights('/app/column_weights.json')
 
-    # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
     # Dynamically find optimal eps and min_samples
@@ -137,7 +158,13 @@ async def create_clusters(file: UploadFile = File(...)):
 
     # Apply DBSCAN clustering
     clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
-    df['cluster'] = clustering_model.fit_predict(df_preprocessed)
+    clusters = clustering_model.fit_predict(df_preprocessed)
+
+    # Assign noise points (-1) to nearest cluster
+    clusters = assign_noise_points(df_preprocessed, clusters)
+
+    # Save clusters to the dataframe
+    df['cluster'] = clusters
 
     # Reduce dimensions using t-SNE
     df_reduced = reduce_dimensions(df_preprocessed, method="tsne", n_components=2)
@@ -150,7 +177,7 @@ async def create_clusters(file: UploadFile = File(...)):
     # Store reduced-dimension data with cluster labels in OpenSearch
     for index, row in df_reduced.iterrows():
         doc = row.to_dict()
-        doc['cluster'] = df['cluster'].iloc[index]  # Add cluster label to reduced data
+        doc['cluster'] = df['cluster'].iloc[index]
         client.index(index=REDUCED_INDEX, id=index, body=doc)
 
     return {
