@@ -87,27 +87,43 @@ def reduce_dimensions(df, method="pca", n_components=2):
     return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
 
-# Function to dynamically adjust eps and min_samples until all points are clustered
-def cluster_with_dbscan(df_preprocessed, initial_eps=0.5, min_samples=5, max_eps=50.0, step=0.5):
-    eps = initial_eps
-    while eps <= max_eps:
-        # Apply DBSCAN clustering
-        clustering_model = DBSCAN(eps=eps, min_samples=min_samples)
-        clusters = clustering_model.fit_predict(df_preprocessed)
+# Function to find optimal eps and min_samples
+def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2,
+                        max_min_samples=10):
+    optimal_eps = min_eps
+    optimal_min_samples = min_min_samples
+    max_clusters = 1  # Ensure we don't get all noise or a single cluster
 
-        # If all points are assigned to clusters (no points with label -1), break the loop
-        if -1 not in clusters:
-            return clusters, eps
+    # Iterate over eps values
+    while optimal_eps <= max_eps and max_clusters <= 1:
+        # Iterate over min_samples values
+        for min_samples in range(min_min_samples, max_min_samples + 1):
+            clustering_model = DBSCAN(eps=optimal_eps, min_samples=min_samples)
+            clusters = clustering_model.fit_predict(df_preprocessed)
 
-        # Increase eps and try again
-        eps += step
+            # Exclude noise (-1) when counting clusters
+            unique_clusters = set(clusters)
+            if -1 in unique_clusters:
+                unique_clusters.remove(-1)
 
-    # If max_eps is reached and still not all points are clustered, return the best result
-    return clusters, eps
+            # If more than one cluster is found, stop and return the parameters
+            if len(unique_clusters) > 1:
+                max_clusters = len(unique_clusters)
+                optimal_min_samples = min_samples
+                break
 
-# Endpoint to create initial clusters from CSV and store reduced-dimension data
+        # If more than one cluster was found, stop
+        if max_clusters > 1:
+            break
+        # Otherwise, increase eps and try again
+        optimal_eps += step_eps
+
+    return optimal_eps, optimal_min_samples
+
+
+# Endpoint to create clusters from CSV and store reduced-dimension data
 @app.post("/create-clusters/")
-async def create_clusters(file: UploadFile = File(...), initial_eps: float = 0.5, min_samples: int = 5):
+async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
@@ -117,13 +133,14 @@ async def create_clusters(file: UploadFile = File(...), initial_eps: float = 0.5
     # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
-    # Apply dynamic DBSCAN clustering (adjust eps and min_samples)
-    clusters, final_eps = cluster_with_dbscan(df_preprocessed, initial_eps=initial_eps, min_samples=min_samples)
+    # Dynamically find the optimal eps and min_samples
+    optimal_eps, optimal_min_samples = find_optimal_dbscan(df_preprocessed)
 
-    # Assign clusters to the dataframe
-    df['cluster'] = clusters
+    # Apply DBSCAN clustering with optimal parameters
+    clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
+    df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
-    # Reduce dimensions using PCA (you can also use t-SNE)
+    # Reduce dimensions using PCA
     df_reduced = reduce_dimensions(df_preprocessed, method="pca", n_components=2)
 
     # Store original data with clusters in the main index
@@ -138,7 +155,7 @@ async def create_clusters(file: UploadFile = File(...), initial_eps: float = 0.5
         client.index(index=REDUCED_INDEX, id=index, body=doc)  # Store in the reduced-dimension index
 
     return {
-        "message": f"Clusters created with final eps={final_eps} and stored in {OS_INDEX}. Reduced dimension data stored in {REDUCED_INDEX}."
+        "message": f"Clusters created with final eps={optimal_eps}, min_samples={optimal_min_samples}, and stored in {OS_INDEX}. Reduced dimension data stored in {REDUCED_INDEX}."
     }
 
 # Endpoint to classify a single record using OpenSearch k-NN
