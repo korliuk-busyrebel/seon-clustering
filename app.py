@@ -89,8 +89,7 @@ def reduce_dimensions(df, method="tsne", n_components=2):
 
 
 # Function to find optimal eps and min_samples
-def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2,
-                        max_min_samples=10):
+def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
     optimal_eps = min_eps
     optimal_min_samples = min_min_samples
     max_clusters = 1  # Ensure we don't get all noise or a single cluster
@@ -121,37 +120,38 @@ def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5
 
     return optimal_eps, optimal_min_samples
 
-
-# Use t-SNE in your API:
+# Endpoint to create clusters from CSV
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
+    # Load column weights
     column_weights = load_column_weights('/app/column_weights.json')
 
+    # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
-    # Dynamically find the optimal eps and min_samples
+    # Dynamically find optimal eps and min_samples
     optimal_eps, optimal_min_samples = find_optimal_dbscan(df_preprocessed)
 
-    # Apply DBSCAN clustering with optimal parameters
+    # Apply DBSCAN clustering
     clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
     df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
     # Reduce dimensions using t-SNE
     df_reduced = reduce_dimensions(df_preprocessed, method="tsne", n_components=2)
 
-    # Store original data with clusters in the main index
+    # Store original data with clusters in OpenSearch
     for index, row in df.iterrows():
         doc = row.to_dict()
-        client.index(index=OS_INDEX, id=index, body=doc)  # Store in the main index
+        client.index(index=OS_INDEX, id=index, body=doc)
 
-    # Store reduced-dimension data in another OpenSearch index
+    # Store reduced-dimension data with cluster labels in OpenSearch
     for index, row in df_reduced.iterrows():
         doc = row.to_dict()
-        doc['cluster'] = df['cluster'].iloc[index]  # Add the cluster label
-        client.index(index=REDUCED_INDEX, id=index, body=doc)  # Store in the reduced-dimension index
+        doc['cluster'] = df['cluster'].iloc[index]  # Add cluster label to reduced data
+        client.index(index=REDUCED_INDEX, id=index, body=doc)
 
     return {
         "message": f"Clusters created with final eps={optimal_eps}, min_samples={optimal_min_samples}, and stored in {OS_INDEX}. Reduced dimension data stored in {REDUCED_INDEX}."
