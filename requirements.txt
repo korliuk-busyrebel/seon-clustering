@@ -5,3 +5,4 @@ scikit-learn
 elasticsearch
 python-multipart
 opensearch-py
+umap-learn
