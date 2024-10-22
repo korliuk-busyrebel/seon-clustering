@@ -99,7 +99,7 @@ async def create_clusters(file: UploadFile = File(...)):
     df_preprocessed = preprocess_data(df, column_weights)
 
     # Apply DBSCAN clustering
-    clustering_model = DBSCAN(eps=0.5, min_samples=5)
+    clustering_model = DBSCAN(eps=1, min_samples=3)
     df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
     # Reduce dimensions using PCA (you can also use t-SNE)
