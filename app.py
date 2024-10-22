@@ -36,44 +36,40 @@ def load_column_weights(weights_file_path):
 
 
 # Apply column weights during preprocessing
-
 def preprocess_data(df, column_weights):
     # Separate numeric and categorical columns
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
     categorical_cols = df.select_dtypes(include=['object']).columns
 
-    # Fill missing values for numeric columns with the mean
-    numeric_imputer = SimpleImputer(strategy='mean')
-    df[numeric_cols] = numeric_imputer.fit_transform(df[numeric_cols])
+    # Fill missing values for numeric columns
+    df[numeric_cols] = df[numeric_cols].fillna(0)
 
-    # Fill missing values for categorical columns with the most frequent value
-    categorical_imputer = SimpleImputer(strategy='most_frequent')
+    # Encode categorical columns
     for col in categorical_cols:
-        df[col] = categorical_imputer.fit_transform(df[[col]]).ravel()
+        df[col] = df[col].fillna('missing')  # Replace NaN with 'missing'
         le = LabelEncoder()
         try:
             df[col] = le.fit_transform(df[col].astype(str))
         except Exception as e:
             print(f"Error encoding column {col}: {e}")
 
-    # Combine numeric and encoded categorical columns
-    all_columns = numeric_cols.union(categorical_cols)
+    # Combine the numeric and encoded categorical columns into a single DataFrame
+    all_columns = list(numeric_cols) + list(categorical_cols)
 
-    # Filter out columns with weight <= 0.0
-    selected_columns = [col for col in all_columns if column_weights.get(col, 0.0) > 0.0]
+    # Check if the number of columns after preprocessing matches the original set
+    df_processed = df[all_columns]
 
-    if not selected_columns:
-        raise ValueError("No columns with weight > 0.0 found.")
-
-    # Scale only the selected columns
+    # Scale the entire dataset
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df[selected_columns])
+    df_scaled = scaler.fit_transform(df_processed)
 
-    # Apply column weights
-    for idx, col in enumerate(selected_columns):
-        df_scaled[:, idx] *= column_weights[col]
+    # Apply column weights, but only for those with weight greater than 0
+    for idx, col in enumerate(all_columns):
+        if col in column_weights and column_weights[col] > 0.0:
+            df_scaled[:, idx] *= column_weights[col]
 
-    return pd.DataFrame(df_scaled, columns=selected_columns)
+    # Return the DataFrame with scaled values
+    return pd.DataFrame(df_scaled, columns=all_columns)
 
 # Endpoint to create initial clusters from CSV
 @app.post("/create-clusters/")
