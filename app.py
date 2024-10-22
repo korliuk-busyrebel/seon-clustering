@@ -3,6 +3,7 @@ from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from opensearchpy import OpenSearch  # Updated import
 from io import StringIO
 import pandas as pd
@@ -74,12 +75,12 @@ def preprocess_data(df, column_weights):
     return pd.DataFrame(df_scaled, columns=all_columns)
 
 
-# Function to reduce dimensions using PCA or t-SNE
-def reduce_dimensions(df, method="pca", n_components=2):
+# Function to reduce dimensions using t-SNE or PCA
+def reduce_dimensions(df, method="tsne", n_components=2):
     if method == "pca":
         reducer = PCA(n_components=n_components)
     elif method == "tsne":
-        reducer = TSNE(n_components=n_components)
+        reducer = TSNE(n_components=n_components, perplexity=30, learning_rate=200)
     else:
         raise ValueError("Unknown method")
 
@@ -121,16 +122,14 @@ def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5
     return optimal_eps, optimal_min_samples
 
 
-# Endpoint to create clusters from CSV and store reduced-dimension data
+# Use t-SNE in your API:
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
-    # Load column weights for preprocessing
     column_weights = load_column_weights('/app/column_weights.json')
 
-    # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
     # Dynamically find the optimal eps and min_samples
@@ -140,8 +139,8 @@ async def create_clusters(file: UploadFile = File(...)):
     clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
     df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
-    # Reduce dimensions using PCA
-    df_reduced = reduce_dimensions(df_preprocessed, method="pca", n_components=2)
+    # Reduce dimensions using t-SNE
+    df_reduced = reduce_dimensions(df_preprocessed, method="tsne", n_components=2)
 
     # Store original data with clusters in the main index
     for index, row in df.iterrows():
