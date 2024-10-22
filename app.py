@@ -10,6 +10,7 @@ from io import StringIO
 import pandas as pd
 import json
 import os
+import umap
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -76,31 +77,29 @@ def preprocess_data(df, column_weights):
     return pd.DataFrame(df_scaled, columns=all_columns)
 
 
-# Function to reduce dimensions for each cluster
-def reduce_dimensions_by_clusters(df, clusters, method="tsne", n_components=2):
-    df_reduced = pd.DataFrame()
+# Function to reduce dimensions using t-SNE or PCA
+def reduce_dimensions(df, method="tsne", n_components=2):
+    if method == "pca":
+        reducer = PCA(n_components=n_components)
+    elif method == "tsne":
+        reducer = TSNE(n_components=n_components, perplexity=30, learning_rate=200)
+    else:
+        raise ValueError("Unknown method")
 
-    unique_clusters = set(clusters)
-    for cluster in unique_clusters:
-        cluster_data = df[clusters == cluster]
+    reduced_data = reducer.fit_transform(df)
+    return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
-        # Adjust perplexity based on the number of samples in the cluster
-        perplexity = min(30, len(cluster_data) - 1)  # Ensuring perplexity is less than the number of samples
+# Function to reduce dimensions using PCA and UMAP
+def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
+    # Step 1: Apply PCA to reduce to n_components_pca
+    pca = PCA(n_components=n_components_pca)
+    df_pca = pca.fit_transform(df)
 
-        if method == "pca":
-            reducer = PCA(n_components=n_components)
-        elif method == "tsne":
-            reducer = TSNE(n_components=n_components, perplexity=perplexity, learning_rate=200)
-        else:
-            raise ValueError("Unknown method")
+    # Step 2: Apply UMAP to reduce to 2 components for visualization
+    reducer = umap.UMAP(n_components=n_components_umap)
+    df_umap = reducer.fit_transform(df_pca)
 
-        reduced_data = reducer.fit_transform(cluster_data)
-        reduced_df = pd.DataFrame(reduced_data, columns=[f"dim_{i + 1}" for i in range(n_components)])
-        reduced_df['cluster'] = cluster
-
-        df_reduced = pd.concat([df_reduced, reduced_df])
-
-    return df_reduced.reset_index(drop=True)
+    return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
 
 # Function to find optimal eps and min_samples
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
@@ -156,16 +155,13 @@ def assign_noise_points(df_preprocessed, clusters):
 
     return clusters
 
-# Endpoint to create clusters from CSV
+# Example usage in the create_clusters function
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
-    # Load column weights
     column_weights = load_column_weights('/app/column_weights.json')
-
-    # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
     # Dynamically find optimal eps and min_samples
@@ -181,8 +177,8 @@ async def create_clusters(file: UploadFile = File(...)):
     # Save clusters to the dataframe
     df['cluster'] = clusters
 
-    # Reduce dimensions by clusters using t-SNE
-    df_reduced = reduce_dimensions_by_clusters(df_preprocessed, clusters, method="tsne", n_components=2)
+    # Optimal dimensionality reduction using PCA + UMAP
+    df_reduced = reduce_dimensions_optimal(df_preprocessed)
 
     # Store original data with clusters in OpenSearch
     for index, row in df.iterrows():
@@ -192,6 +188,7 @@ async def create_clusters(file: UploadFile = File(...)):
     # Store reduced-dimension data with cluster labels in OpenSearch
     for index, row in df_reduced.iterrows():
         doc = row.to_dict()
+        doc['cluster'] = df['cluster'].iloc[index]
         client.index(index=REDUCED_INDEX, id=index, body=doc)
 
     return {
