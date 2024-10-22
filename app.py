@@ -88,7 +88,7 @@ def reduce_dimensions(df, method="pca", n_components=2):
 
 
 # Function to dynamically adjust eps and min_samples until all points are clustered
-def cluster_with_dbscan(df_preprocessed, initial_eps=0.5, min_samples=5, max_eps=20.0, step=0.5):
+def cluster_with_dbscan(df_preprocessed, initial_eps=0.5, min_samples=5, max_eps=50.0, step=0.5):
     eps = initial_eps
     while eps <= max_eps:
         # Apply DBSCAN clustering
