@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile
 from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
+from sklearn.decomposition import PCA
 from opensearchpy import OpenSearch  # Updated import
 from io import StringIO
 import pandas as pd
@@ -15,6 +16,7 @@ app = FastAPI()
 OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")  # OpenSearch username
 OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")  # OpenSearch password
@@ -71,25 +73,52 @@ def preprocess_data(df, column_weights):
     # Return the DataFrame with scaled values
     return pd.DataFrame(df_scaled, columns=all_columns)
 
-# Endpoint to create initial clusters from CSV
+
+# Function to reduce dimensions using PCA or t-SNE
+def reduce_dimensions(df, method="pca", n_components=2):
+    if method == "pca":
+        reducer = PCA(n_components=n_components)
+    elif method == "tsne":
+        reducer = TSNE(n_components=n_components)
+    else:
+        raise ValueError("Unknown method")
+
+    reduced_data = reducer.fit_transform(df)
+    return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
+
+# Endpoint to create initial clusters from CSV and store reduced-dimension data
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
+    # Load column weights for preprocessing
     column_weights = load_column_weights('/app/column_weights.json')
 
+    # Preprocess data
     df_preprocessed = preprocess_data(df, column_weights)
 
+    # Apply DBSCAN clustering
     clustering_model = DBSCAN(eps=0.5, min_samples=5)
     df['cluster'] = clustering_model.fit_predict(df_preprocessed)
 
+    # Reduce dimensions using PCA (you can also use t-SNE)
+    df_reduced = reduce_dimensions(df_preprocessed, method="pca", n_components=2)
+
+    # Store original data with clusters in the main index
     for index, row in df.iterrows():
         doc = row.to_dict()
-        client.index(index=OS_INDEX, id=index, body=doc)  # Updated client
+        client.index(index=OS_INDEX, id=index, body=doc)  # Store in the main index
 
-    return {"message": f"Clusters created and stored in OpenSearch index {OS_INDEX}"}
+    # Store reduced-dimension data in another OpenSearch index
+    for index, row in df_reduced.iterrows():
+        doc = row.to_dict()
+        doc['cluster'] = df['cluster'].iloc[index]  # Add the cluster label
+        client.index(index=REDUCED_INDEX, id=index, body=doc)  # Store in the reduced-dimension index
 
+    return {
+        "message": f"Clusters created and stored in {OS_INDEX} and reduced dimension data stored in {REDUCED_INDEX}"
+    }
 
 # Endpoint to classify a single record using OpenSearch k-NN
 @app.post("/classify-record/")
