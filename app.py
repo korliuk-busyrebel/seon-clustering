@@ -89,18 +89,6 @@ def reduce_dimensions(df, method="tsne", n_components=2):
     reduced_data = reducer.fit_transform(df)
     return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
-# Function to reduce dimensions using PCA and UMAP
-def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
-    # Step 1: Apply PCA to reduce to n_components_pca
-    pca = PCA(n_components=n_components_pca)
-    df_pca = pca.fit_transform(df)
-
-    # Step 2: Apply UMAP to reduce to 2 components for visualization
-    reducer = umap.UMAP(n_components=n_components_umap)
-    df_umap = reducer.fit_transform(df_pca)
-
-    return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
-
 # Function to find optimal eps and min_samples
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
     optimal_eps = min_eps
@@ -154,6 +142,18 @@ def assign_noise_points(df_preprocessed, clusters):
         clusters[noise_indices][i] = nearest_cluster
 
     return clusters
+
+# Function to reduce dimensions using UMAP and PCA
+def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
+    # Step 1: Apply PCA to reduce to n_components_pca
+    pca = PCA(n_components=n_components_pca)
+    df_pca = pca.fit_transform(df)
+
+    # Step 2: Apply UMAP to reduce to 2 components for visualization
+    reducer = umap.UMAP(n_components=n_components_umap)
+    df_umap = reducer.fit_transform(df_pca)
+
+    return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
 
 # Example usage in the create_clusters function
 @app.post("/create-clusters/")
