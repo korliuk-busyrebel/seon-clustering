@@ -1,6 +1,7 @@
 import mlflow
 import mlflow.sklearn
 
+
 def start_mlflow_run(experiment_name: str, params: dict):
     mlflow.set_experiment(experiment_name)
     run = mlflow.start_run()

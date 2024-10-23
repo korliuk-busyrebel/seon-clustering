@@ -4,7 +4,6 @@ import umap
 from mlflow_utils import log_metrics_and_model
 from opensearch_utils import save_to_opensearch
 
-
 def process_dbscan(df_preprocessed, df, column_weights):
     optimal_eps, optimal_min_samples = find_optimal_dbscan(df_preprocessed)
 

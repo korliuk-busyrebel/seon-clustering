@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+import json
 
 # Load column weights from an external JSON file
 def load_column_weights(weights_file_path):

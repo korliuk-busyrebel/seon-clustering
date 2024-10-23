@@ -1,6 +1,7 @@
 from opensearchpy import OpenSearch
 from config import OS_HOST, OS_PORT, OS_SCHEME, OS_USERNAME, OS_PASSWORD
 
+
 # Initialize OpenSearch client with basic authentication
 client = OpenSearch(
     hosts=[{'host': OS_HOST, 'port': OS_PORT}],
