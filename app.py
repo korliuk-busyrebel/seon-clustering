@@ -89,11 +89,12 @@ def reduce_dimensions(df, method="tsne", n_components=2):
     reduced_data = reducer.fit_transform(df)
     return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
-# Function to find optimal eps and min_samples
+# Function to find optimal eps and min_samples, aiming to minimize noise
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
     optimal_eps = min_eps
     optimal_min_samples = min_min_samples
     max_clusters = 1  # Ensure we don't get all noise or a single cluster
+    min_noise_ratio = 1.0  # Start with the maximum possible noise ratio
 
     # Iterate over eps values
     while optimal_eps <= max_eps and max_clusters <= 1:
@@ -102,21 +103,23 @@ def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5
             clustering_model = DBSCAN(eps=optimal_eps, min_samples=min_samples)
             clusters = clustering_model.fit_predict(df_preprocessed)
 
-            # Exclude noise (-1) when counting clusters
+            # Count clusters and noise points
             unique_clusters = set(clusters)
+            noise_points = list(clusters).count(-1)
+            noise_ratio = noise_points / len(clusters)
+
+            # Exclude noise (-1) when counting clusters
             if -1 in unique_clusters:
                 unique_clusters.remove(-1)
 
-            # If more than one cluster is found, stop and return the parameters
-            if len(unique_clusters) > 1:
+            # Update parameters if noise ratio is reduced and we have more than one cluster
+            if len(unique_clusters) > 1 and noise_ratio < min_noise_ratio:
+                min_noise_ratio = noise_ratio
                 max_clusters = len(unique_clusters)
+                optimal_eps = optimal_eps
                 optimal_min_samples = min_samples
-                break
 
-        # If more than one cluster was found, stop
-        if max_clusters > 1:
-            break
-        # Otherwise, increase eps and try again
+        # Increase eps to try to capture more points
         optimal_eps += step_eps
 
     return optimal_eps, optimal_min_samples
@@ -154,6 +157,7 @@ def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
     df_umap = reducer.fit_transform(df_pca)
 
     return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
+
 
 # Example usage in the create_clusters function
 @app.post("/create-clusters/")
