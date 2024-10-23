@@ -5,6 +5,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import LocalOutlierFactor
 from sklearn.cluster import KMeans
 from opensearchpy import OpenSearch
 from io import StringIO
@@ -186,6 +187,19 @@ def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
     return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
 
 
+# Function to reassign noise points using LOF for outliers
+def handle_outliers_with_lof(df_preprocessed, clusters):
+    lof = LocalOutlierFactor(n_neighbors=20, contamination=0.05)
+    is_inlier = lof.fit_predict(df_preprocessed)  # -1 is an outlier, 1 is an inlier
+
+    # Mark points as noise that are outliers according to LOF
+    for i, inlier in enumerate(is_inlier):
+        if inlier == -1:
+            clusters[i] = -1  # Mark as noise
+
+    return clusters
+
+# Example usage in the create_clusters function
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
@@ -201,13 +215,16 @@ async def create_clusters(file: UploadFile = File(...)):
     clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
     clusters = clustering_model.fit_predict(df_preprocessed)
 
-    # If noise points remain, reassign using K-Means
-    clusters = reassign_noise_points_with_kmeans(df_preprocessed, clusters)
+    # Reassign noise points (-1) to nearest cluster using NearestNeighbors
+    clusters = assign_noise_points(df_preprocessed, clusters)
+
+    # Handle outliers using LOF
+    clusters = handle_outliers_with_lof(df_preprocessed, clusters)
 
     # Save clusters to the dataframe
     df['cluster'] = clusters
 
-    # Reduce dimensions using PCA + UMAP
+    # Optimal dimensionality reduction using PCA + UMAP
     df_reduced = reduce_dimensions_optimal(df_preprocessed)
 
     # Store original data with clusters in OpenSearch
