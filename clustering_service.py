@@ -6,6 +6,9 @@ from preprocessing import load_column_weights, preprocess_data
 from clustering import find_optimal_dbscan, assign_noise_points, reduce_dimensions_optimal, evaluate_clustering
 from mlflow_utils import start_mlflow_run, log_metrics_and_model, end_mlflow_run
 from sklearn.cluster import DBSCAN
+from config import client, OS_INDEX
+
+
 
 app = FastAPI()
 
@@ -53,3 +56,27 @@ async def create_clusters(file: UploadFile = File(...)):
         "calinski_harabasz_score": ch_score,
         "davies_bouldin_score": db_score
     }
+
+@app.post("/classify-record/")
+async def classify_record(record: dict):
+    record_data = pd.DataFrame([record])
+    column_weights = load_column_weights('/app/column_weights.json')
+    record_preprocessed = preprocess_data(record_data, column_weights)
+    vector = record_preprocessed.values[0].tolist()
+
+    k_nn_query = {
+        "size": 1,
+        "_source": False,
+        "knn": {
+            "field": "vector",
+            "query_vector": vector,
+            "k": 1,
+            "num_candidates": 100
+        }
+    }
+
+    response = client.search(index=OS_INDEX, body=k_nn_query)
+    nearest_neighbor = response['hits']['hits'][0]
+    predicted_cluster = nearest_neighbor['_id']
+
+    return {"cluster": predicted_cluster}
