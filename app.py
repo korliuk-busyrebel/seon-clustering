@@ -34,6 +34,11 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow-tracking")
 os.environ['MLFLOW_TRACKING_USERNAME'] = os.getenv("MLFLOW_TRACKING_USERNAME", "your-username")
 os.environ['MLFLOW_TRACKING_PASSWORD'] = os.getenv("MLFLOW_TRACKING_PASSWORD", "your-password")
 
+# Set path to Git executable if needed
+os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = "/usr/bin/git"  # Adjust path as necessary
+# Optionally silence the warning
+os.environ["GIT_PYTHON_REFRESH"] = "quiet"
+
 # Initialize OpenSearch client with basic authentication
 client = OpenSearch(
     hosts=[{'host': OS_HOST, 'port': int(OS_PORT)}],
@@ -253,6 +258,10 @@ async def create_clusters(file: UploadFile = File(...)):
         # Save clusters to the dataframe
         df['cluster'] = clusters
 
+        # Log model input example for signature
+        input_example = df_preprocessed.head(1)
+        mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example)
+
         # Optimal dimensionality reduction using PCA + UMAP
         df_reduced = reduce_dimensions_optimal(df_preprocessed)
 
@@ -267,10 +276,8 @@ async def create_clusters(file: UploadFile = File(...)):
             doc['cluster'] = df['cluster'].iloc[index]
             client.index(index=REDUCED_INDEX, id=index, body=doc)
 
-        # Calculate cluster evaluation metrics
-        silhouette_avg = silhouette_score(df_preprocessed, clusters)
-        ch_score = calinski_harabasz_score(df_preprocessed, clusters)
-        db_score = davies_bouldin_score(df_preprocessed, clusters)
+        # Calculate evaluation metrics
+        silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
 
         # Log metrics in MLflow
         mlflow.log_metric("silhouette_score", silhouette_avg)
