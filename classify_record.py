@@ -3,6 +3,7 @@ import pandas as pd
 from config import client, OS_INDEX
 from preprocessing import load_column_weights, preprocess_data
 
+
 @app.post("/classify-record/")
 async def classify_record(record: dict):
     record_data = pd.DataFrame([record])

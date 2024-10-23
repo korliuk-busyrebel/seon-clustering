@@ -5,6 +5,7 @@ from config import client, OS_INDEX, REDUCED_INDEX
 from preprocessing import load_column_weights, preprocess_data
 from clustering import find_optimal_dbscan, assign_noise_points, reduce_dimensions_optimal, evaluate_clustering
 from mlflow_utils import start_mlflow_run, log_metrics_and_model, end_mlflow_run
+from sklearn.cluster import DBSCAN
 
 app = FastAPI()
 

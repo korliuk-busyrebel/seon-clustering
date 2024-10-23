@@ -4,7 +4,7 @@ from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 import umap
-
+import pandas as pd
 
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2,
                         max_min_samples=10):
