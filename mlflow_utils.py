@@ -1,37 +1,30 @@
 import mlflow
-from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-from config import MLFLOW_TRACKING_URI, MLFLOW_TRACKING_USERNAME, MLFLOW_TRACKING_PASSWORD
-
-# Initialize MLflow with the configuration
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment("clustering_experiment")
+import mlflow.sklearn
 
 
-def log_metrics_and_model(clustering_model, df_preprocessed, clusters, df, df_reduced, eps, min_samples):
-    start_mlflow_run()
+# Start an MLflow run and log parameters
+def start_mlflow_run(experiment_name: str, params: dict):
+    mlflow.set_experiment(experiment_name)
+    run = mlflow.start_run()
 
-    with mlflow.start_run():
-        mlflow.log_param("eps", eps)
-        mlflow.log_param("min_samples", min_samples)
+    # Log the provided parameters
+    for key, value in params.items():
+        mlflow.log_param(key, value)
 
-        silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
-        mlflow.log_metric("silhouette_score", silhouette_avg)
-        mlflow.log_metric("calinski_harabasz_score", ch_score)
-        mlflow.log_metric("davies_bouldin_score", db_score)
-
-        input_example = df_preprocessed.head(1)
-        mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example)
-
-    return {
-        "message": f"Clusters created with eps={eps}, min_samples={min_samples}",
-        "silhouette_score": silhouette_avg,
-        "calinski_harabasz_score": ch_score,
-        "davies_bouldin_score": db_score
-    }
+    return run
 
 
-def evaluate_clustering(df_preprocessed, clusters):
-    silhouette_avg = silhouette_score(df_preprocessed, clusters)
-    ch_score = calinski_harabasz_score(df_preprocessed, clusters)
-    db_score = davies_bouldin_score(df_preprocessed, clusters)
-    return silhouette_avg, ch_score, db_score
+# Log metrics such as silhouette score, calinski_harabasz_score, and davies_bouldin_score
+def log_mlflow_metrics(metrics: dict):
+    for key, value in metrics.items():
+        mlflow.log_metric(key, value)
+
+
+# Log a scikit-learn model to MLflow
+def log_model_to_mlflow(model, model_name: str, input_example=None):
+    mlflow.sklearn.log_model(model, model_name, input_example=input_example)
+
+
+# End an MLflow run
+def end_mlflow_run():
+    mlflow.end_run()
