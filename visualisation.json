@@ -1,0 +1,48 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "2D scatter plot of clusters with color differentiation",
+  "data": {
+    "url": {
+      "%context%": true,
+      "index": "test-clusters-visual",
+      "body": {
+        "size": 1000,
+        "_source": ["dim_1", "dim_2", "cluster"]
+      }
+    },
+    "format": {"property": "hits.hits"}
+  },
+  "transform": [
+    {
+      "calculate": "datum._source.dim_1",
+      "as": "dim_1"
+    },
+    {
+      "calculate": "datum._source.dim_2",
+      "as": "dim_2"
+    },
+    {
+      "calculate": "datum._source.cluster",
+      "as": "cluster"
+    },
+    {
+      "filter": "datum.dim_1 != null && datum.dim_2 != null"
+    }
+  ],
+  "mark": "point",
+  "encoding": {
+    "x": {"field": "dim_1", "type": "quantitative", "title": "Dimension 1"},
+    "y": {"field": "dim_2", "type": "quantitative", "title": "Dimension 2"},
+    "color": {
+      "field": "cluster",
+      "type": "nominal",
+      "title": "Cluster",
+      "scale": {"scheme": "category10"}
+    }
+  },
+  "config": {
+    "legend": {
+      "orient": "right"
+    }
+  }
+}
