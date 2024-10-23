@@ -32,10 +32,22 @@ def preprocess_data(df, column_weights):
     # Scale the entire dataset
     scaler = StandardScaler()
     df_scaled = scaler.fit_transform(df_processed)
-
+    df_scaled = convert_to_boolean(df_scaled)
     # Apply column weights
     for idx, col in enumerate(all_columns):
         if col in column_weights and column_weights[col] > 0.0:
             df_scaled[:, idx] *= column_weights[col]
 
     return pd.DataFrame(df_scaled, columns=all_columns)
+
+def convert_to_boolean(df):
+    """Convert columns that are supposed to be boolean into proper booleans."""
+    # Define columns that should be treated as booleans
+    boolean_columns = ['detail__data__request__config__async']  # Add more as needed
+
+    for col in boolean_columns:
+        if col in df.columns:
+            # Convert '0'/'1' strings to integers first, then to boolean
+            df[col] = df[col].astype(int).astype(bool)
+
+    return df
