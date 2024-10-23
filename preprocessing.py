@@ -40,14 +40,17 @@ def preprocess_data(df, column_weights):
 
     return pd.DataFrame(df_scaled, columns=all_columns)
 
-def convert_to_boolean(df):
-    """Convert columns that are supposed to be boolean into proper booleans."""
-    # Define columns that should be treated as booleans
-    boolean_columns = ['detail__data__request__config__async']  # Add more as needed
 
-    for col in boolean_columns:
-        if col in df.columns:
-            # Convert '0'/'1' strings to integers first, then to boolean
-            df[col] = df[col].astype(int).astype(bool)
+def convert_to_boolean(df):
+    """Convert columns that should be treated as boolean into proper booleans."""
+
+    # Loop through each column in the DataFrame
+    for col in df.columns:
+        # Check if the column contains only 0 and 1, or True and False
+        if df[col].dropna().isin([0, 1]).all():  # Check for 0 and 1 values
+            # Convert column to boolean
+            df[col] = df[col].astype(bool)
+        elif df[col].dropna().isin([True, False]).all():  # Check for True/False values
+            df[col] = df[col].astype(bool)
 
     return df
