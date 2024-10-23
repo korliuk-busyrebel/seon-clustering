@@ -5,6 +5,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans
 from opensearchpy import OpenSearch
 from io import StringIO
 import pandas as pd
@@ -89,37 +90,38 @@ def reduce_dimensions(df, method="tsne", n_components=2):
     reduced_data = reducer.fit_transform(df)
     return pd.DataFrame(reduced_data, columns=[f"dim_{i+1}" for i in range(n_components)])
 
-# Function to find optimal eps and min_samples, aiming to minimize noise
+## Function to find optimal eps and min_samples
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):
     optimal_eps = min_eps
     optimal_min_samples = min_min_samples
-    max_clusters = 1  # Ensure we don't get all noise or a single cluster
-    min_noise_ratio = 1.0  # Start with the maximum possible noise ratio
+    best_noise_ratio = 1.0  # Start with maximum noise ratio
 
     # Iterate over eps values
-    while optimal_eps <= max_eps and max_clusters <= 1:
+    while optimal_eps <= max_eps:
         # Iterate over min_samples values
         for min_samples in range(min_min_samples, max_min_samples + 1):
             clustering_model = DBSCAN(eps=optimal_eps, min_samples=min_samples)
             clusters = clustering_model.fit_predict(df_preprocessed)
 
-            # Count clusters and noise points
-            unique_clusters = set(clusters)
+            # Calculate the noise ratio
             noise_points = list(clusters).count(-1)
             noise_ratio = noise_points / len(clusters)
 
             # Exclude noise (-1) when counting clusters
+            unique_clusters = set(clusters)
             if -1 in unique_clusters:
                 unique_clusters.remove(-1)
 
-            # Update parameters if noise ratio is reduced and we have more than one cluster
-            if len(unique_clusters) > 1 and noise_ratio < min_noise_ratio:
-                min_noise_ratio = noise_ratio
-                max_clusters = len(unique_clusters)
+            # If this configuration has less noise, save it as optimal
+            if len(unique_clusters) > 1 and noise_ratio < best_noise_ratio:
+                best_noise_ratio = noise_ratio
                 optimal_eps = optimal_eps
                 optimal_min_samples = min_samples
 
-        # Increase eps to try to capture more points
+            # If noise ratio is low enough, stop early
+            if noise_ratio <= 0.05:  # Stop if less than 5% of points are noise
+                return optimal_eps, optimal_min_samples
+
         optimal_eps += step_eps
 
     return optimal_eps, optimal_min_samples
@@ -146,6 +148,31 @@ def assign_noise_points(df_preprocessed, clusters):
 
     return clusters
 
+
+# Function to reassign noise points (-1) using K-Means if NearestNeighbors fails
+def reassign_noise_points_with_kmeans(df_preprocessed, clusters, n_clusters=None):
+    noise_indices = (clusters == -1)
+
+    if sum(noise_indices) == 0:
+        return clusters
+
+    # If there are fewer clusters than points, reassign noise points using K-Means
+    if n_clusters is None:
+        n_clusters = len(set(clusters)) - (1 if -1 in clusters else 0)
+
+    # Fit K-Means on the points that are not noise
+    kmeans = KMeans(n_clusters=n_clusters)
+    non_noise_indices = (clusters != -1)
+    kmeans.fit(df_preprocessed[non_noise_indices])
+
+    # Predict cluster labels for noise points
+    noise_clusters = kmeans.predict(df_preprocessed[noise_indices])
+
+    # Assign K-Means clusters to the noise points
+    clusters[noise_indices] = noise_clusters
+
+    return clusters
+
 # Function to reduce dimensions using UMAP and PCA
 def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
     # Step 1: Apply PCA to reduce to n_components_pca
@@ -159,7 +186,6 @@ def reduce_dimensions_optimal(df, n_components_pca=30, n_components_umap=2):
     return pd.DataFrame(df_umap, columns=[f"dim_{i+1}" for i in range(n_components_umap)])
 
 
-# Example usage in the create_clusters function
 @app.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
@@ -175,13 +201,13 @@ async def create_clusters(file: UploadFile = File(...)):
     clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
     clusters = clustering_model.fit_predict(df_preprocessed)
 
-    # Assign noise points (-1) to nearest cluster
-    clusters = assign_noise_points(df_preprocessed, clusters)
+    # If noise points remain, reassign using K-Means
+    clusters = reassign_noise_points_with_kmeans(df_preprocessed, clusters)
 
     # Save clusters to the dataframe
     df['cluster'] = clusters
 
-    # Optimal dimensionality reduction using PCA + UMAP
+    # Reduce dimensions using PCA + UMAP
     df_reduced = reduce_dimensions_optimal(df_preprocessed)
 
     # Store original data with clusters in OpenSearch
