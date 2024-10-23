@@ -6,3 +6,4 @@ elasticsearch
 python-multipart
 opensearch-py
 umap-learn
+mlflow
