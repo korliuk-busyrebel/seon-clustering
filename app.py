@@ -31,7 +31,8 @@ OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")  # OpenSearch username
 OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")  # OpenSearch password
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow-tracking")  # Set MLflow URI
-
+os.environ['MLFLOW_TRACKING_USERNAME'] = os.getenv("MLFLOW_TRACKING_USERNAME", "your-username")
+os.environ['MLFLOW_TRACKING_PASSWORD'] = os.getenv("MLFLOW_TRACKING_PASSWORD", "your-password")
 
 # Initialize OpenSearch client with basic authentication
 client = OpenSearch(
