@@ -2,9 +2,33 @@ from fastapi import APIRouter
 import pandas as pd
 from services.preprocessing import preprocess_data
 from services.opensearch_client import classify_record_opensearch, knn_search_opensearch
+from opensearchpy import OpenSearch
 from utils.column_weights import load_column_weights
+import urllib3
+import os
+# Suppress the InsecureRequestWarning
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 router = APIRouter()
+
+
+# Initialize OpenSearch client
+OS_HOST = os.getenv("OS_HOST", "localhost")
+OS_PORT = os.getenv("OS_PORT", 9200)
+OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
+OS_SCHEME = os.getenv("OS_SCHEME", "http")
+OS_USERNAME = os.getenv("OS_USERNAME", "admin")
+OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")
+
+client = OpenSearch(
+    hosts=[{'host': OS_HOST, 'port': int(OS_PORT)}],
+    http_auth=(OS_USERNAME, OS_PASSWORD),
+    use_ssl=(OS_SCHEME == 'https'),
+    verify_certs=False,
+    scheme=OS_SCHEME,
+    timeout=60
+)
 
 @app.post("/classify-record/")
 async def classify_record(record: dict):
