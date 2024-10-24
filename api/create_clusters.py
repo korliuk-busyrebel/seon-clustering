@@ -45,7 +45,7 @@ async def create_clusters(file: UploadFile = File(...)):
 
         # Log model input example for signature
         input_example = df_preprocessed.head(1)
-        mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example)
+        mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example, signature=False)
 
         # Optimal dimensionality reduction using PCA + UMAP
         df_reduced = reduce_dimensions_optimal(df_preprocessed)
@@ -70,7 +70,7 @@ async def create_clusters(file: UploadFile = File(...)):
         mlflow.log_metric("davies_bouldin_score", db_score)
 
         # Log the DBSCAN model in MLflow
-        mlflow.sklearn.log_model(clustering_model, "dbscan_model")
+        mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example, signature=False)
 
     return {
         "message": f"Clusters created with final eps={optimal_eps}, min_samples={optimal_min_samples}, and stored in {OS_INDEX}. Reduced dimension data stored in {REDUCED_INDEX}.",
