@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 import pandas as pd
 from services.preprocessing import preprocess_data
-from services.opensearch_client import classify_record_opensearch, knn_search_opensearch
+from services.opensearch_client import classify_record_opensearch
 from opensearchpy import OpenSearch
 from utils.column_weights import load_column_weights
 import urllib3
