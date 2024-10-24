@@ -16,33 +16,26 @@ def preprocess_data(df, column_weights):
     # Fill missing values for numeric columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
 
-    # Encode categorical columns
-    for col in categorical_cols:
-        df[col] = df[col].fillna('missing')  # Replace NaN with 'missing'
-        le = LabelEncoder()
-        try:
-            df[col] = le.fit_transform(df[col].astype(str))
-        except Exception as e:
-            print(f"Error encoding column {col}: {e}")
-
-    # Combine the numeric and encoded categorical columns into a single DataFrame
-    all_columns = list(numeric_cols) + list(categorical_cols)
-    df_processed = df[all_columns]
-
-    # Scale the entire dataset
+    # Apply StandardScaler to numeric columns
     scaler = StandardScaler()
-    df_scaled = scaler.fit_transform(df_processed)
-    df_scaled = convert_to_boolean(df_scaled)
-    # Apply column weights
-    for idx, col in enumerate(all_columns):
-        if col in column_weights and column_weights[col] > 0.0:
-            df_scaled[:, idx] *= column_weights[col]
+    df_scaled = scaler.fit_transform(df[numeric_cols])
 
-    return pd.DataFrame(df_scaled, columns=all_columns)
+    # Convert the scaled array back to a DataFrame
+    df_scaled = pd.DataFrame(df_scaled, columns=numeric_cols)
+
+    # Apply column weights, but only for those with weight greater than 0
+    for idx, col in enumerate(numeric_cols):
+        if col in column_weights and column_weights[col] > 0.0:
+            df_scaled[col] *= column_weights[col]
+
+    # Convert boolean-like columns to proper boolean type
+    df_scaled = convert_to_boolean(df_scaled)
+
+    return df_scaled
 
 
 def convert_to_boolean(df):
-    """Convert columns that should be treated as boolean into proper booleans."""
+    """Convert columns that are supposed to be boolean into proper booleans."""
 
     # Loop through each column in the DataFrame
     for col in df.columns:
