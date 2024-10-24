@@ -7,16 +7,30 @@ from services.dimensionality_reduction import reduce_dimensions_optimal
 from services.evaluation import evaluate_clustering
 from services.preprocessing import preprocess_data
 from utils.column_weights import load_column_weights
+from opensearchpy import OpenSearch
 import mlflow
 import os
 
 router = APIRouter()
 
+
+# Initialize OpenSearch client
+OS_HOST = os.getenv("OS_HOST", "localhost")
+OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
 REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
+OS_SCHEME = os.getenv("OS_SCHEME", "http")
+OS_USERNAME = os.getenv("OS_USERNAME", "admin")
+OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")
 
-
-
+client = OpenSearch(
+    hosts=[{'host': OS_HOST, 'port': int(OS_PORT)}],
+    http_auth=(OS_USERNAME, OS_PASSWORD),
+    use_ssl=(OS_SCHEME == 'https'),
+    verify_certs=False,
+    scheme=OS_SCHEME,
+    timeout=60
+)
 
 @router.post("/create-clusters/")
 async def create_clusters(file: UploadFile = File(...)):
