@@ -58,7 +58,7 @@ async def classify_record(record: dict):
 
     # Perform search
     try:
-        response = client.search(index="my_index", body=knn_query)
+        response = client.search(index=OS_INDEX, body=knn_query)
         # Extract the relevant result from the response
         knn_result = response['hits']['hits'][0]['_source']
         return knn_result
