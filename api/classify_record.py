@@ -30,7 +30,7 @@ client = OpenSearch(
     timeout=60
 )
 
-@app.post("/classify-record/")
+@router.post("/classify-record/")
 async def classify_record(record: dict):
     record_data = pd.DataFrame([record])
     column_weights = load_column_weights('/app/utils/column_weights.json')
