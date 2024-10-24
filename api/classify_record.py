@@ -47,8 +47,7 @@ async def classify_record(record: dict):
         "size": 1,
         "query": {
             "knn": {
-                "vector": {
-                    "field": "cluster",
+                "cluster": {
                     "query_vector": vector,
                     "k": 1
                 }
