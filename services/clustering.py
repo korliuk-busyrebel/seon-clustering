@@ -1,5 +1,6 @@
-from sklearn.cluster import DBSCAN
-from sklearn.neighbors import NearestNeighbors
+
+from sklearn.cluster import DBSCAN  # for DBSCAN clustering algorithm
+from sklearn.neighbors import NearestNeighbors  # for NearestNeighbors algorithm
 
 ## Function to find optimal eps and min_samples
 def find_optimal_dbscan(df_preprocessed, min_eps=0.1, max_eps=30.0, step_eps=0.5, min_min_samples=2, max_min_samples=10):

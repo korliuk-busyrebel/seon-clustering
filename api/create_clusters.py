@@ -1,15 +1,20 @@
 from fastapi import APIRouter, File, UploadFile
 import pandas as pd
+from sklearn.cluster import DBSCAN  # for DBSCAN clustering algorithm
 from io import StringIO
 from services.clustering import find_optimal_dbscan, assign_noise_points
 from services.dimensionality_reduction import reduce_dimensions_optimal
 from services.evaluation import evaluate_clustering
-from services.opensearch_client import save_clusters, save_reduced_data
 from services.preprocessing import preprocess_data
 from utils.column_weights import load_column_weights
 import mlflow
+import os
 
 router = APIRouter()
+
+OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
+
 
 
 @router.post("/create-clusters/")
