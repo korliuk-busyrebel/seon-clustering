@@ -17,7 +17,7 @@ async def create_clusters(file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode('utf-8')))
 
-    column_weights = load_column_weights('./column_weights.json')
+    column_weights = load_column_weights('/app/utils/column_weights.json')
     df_preprocessed = preprocess_data(df, column_weights)
 
     # Dynamically find optimal eps and min_samples

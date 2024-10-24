@@ -9,7 +9,7 @@ router = APIRouter()
 @router.post("/classify-record/")
 async def classify_record(record: dict):
     df = pd.DataFrame([record])
-    column_weights = load_column_weights('./column_weights.json')
+    column_weights = load_column_weights('/app/utils/column_weights.json')
     df_preprocessed = preprocess_data(df, column_weights)
 
     cluster = classify_record_opensearch(df_preprocessed)
