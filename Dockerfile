@@ -1,8 +1,17 @@
-# Use the official Python image as a base
-FROM python:3.10-slim
+# Use the official full Python 3.10 image as a base
+FROM python:3.10
 
 # Set the working directory inside the container
 WORKDIR /app
+
+# Install system dependencies including Git (required by MLflow)
+RUN apt-get update && apt-get install -y \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GIT_PYTHON_REFRESH to avoid unnecessary warnings about Git in MLflow
+ENV GIT_PYTHON_REFRESH=quiet
 
 # Copy the requirements.txt file to the container
 COPY requirements.txt .
