@@ -39,28 +39,32 @@ async def classify_record(record: dict):
     record_preprocessed = preprocess_data(record_data, column_weights)
 
     # Convert the preprocessed record to a list (vector) for k-NN search
-    vector = record_preprocessed.values[0].tolist()
-
+    #vector = record_preprocessed.values[0].tolist()
+    vector = record_preprocessed.iloc[0].tolist()
     # Perform k-NN search in OpenSearch to find the nearest cluster
-    k_nn_query = {
-        "size": 1,  # Retrieve the closest neighbor
-        "_source": False,  # Optionally, control which fields are returned
-        "knn": {
-            "field": "vector",  # Field where you stored your vector data
-            "query_vector": vector,  # Vector for comparison
-            "k": 2,  # Number of nearest neighbors to retrieve
-            "num_candidates": 10  # Optional: number of top candidates to consider
+    # Construct the correct KNN query
+    knn_query = {
+        "size": 1,
+        "query": {
+            "knn": {
+                "vector": {
+                    "field": "vector",  # Replace "vector" with the actual field name
+                    "query_vector": vector,
+                    "k": 1
+                }
+            }
         }
     }
 
-    # Search in OpenSearch using k-NN
-    response = client.search(index=OS_INDEX, body=k_nn_query)
-    nearest_neighbor = response['hits']['hits'][0]
-
-    # Retrieve the cluster information from the nearest neighbor
-    predicted_cluster = nearest_neighbor['_id']  # Or any other relevant cluster field
-
-    return {"cluster": predicted_cluster}
+    # Perform search
+    try:
+        response = client.search(index="my_index", body=knn_query)
+        # Extract the relevant result from the response
+        knn_result = response['hits']['hits'][0]['_source']
+        return knn_result
+    except Exception as e:
+        print(f"Error during KNN search: {e}")
+        return None
 
 # Export the router for use in the main app
 classify_record = router
