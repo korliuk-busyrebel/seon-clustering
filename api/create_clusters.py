@@ -79,7 +79,7 @@ async def create_clusters(file: UploadFile = File(...)):
             },
             "mappings": {
                 "properties": {
-                    "cluster": {
+                    "id": {
                         "type": "knn_vector",
                         "dimension": dimension
                     }
@@ -101,8 +101,8 @@ async def create_clusters(file: UploadFile = File(...)):
         for index, row in df.iterrows():
             doc = row.to_dict()
 
-            # Ensure the 'cluster' field contains a valid non-null vector before indexing
-            if isinstance(doc['cluster'], int) and doc['cluster'] != -1:
+            # Ensure the 'id' field contains a valid non-null vector before indexing
+            if isinstance(doc['id'], int) and doc['id'] != -1:
                 client.index(index=OS_INDEX, id=index, body=doc)
 
         # Store reduced-dimension data with cluster labels in OpenSearch
