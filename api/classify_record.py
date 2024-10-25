@@ -44,12 +44,12 @@ async def classify_record(record: dict):
     # Perform k-NN search in OpenSearch to find the nearest cluster
     # Construct the correct KNN query
     knn_query = {
-        "size": 1,
+        "size": 10,
         "query": {
             "knn": {
                 "cluster": {
                     "vector": vector,
-                    "k": 1
+                    "k": 10
                 }
             }
         }
