@@ -97,10 +97,13 @@ async def create_clusters(file: UploadFile = File(...)):
         # Convert the NumPy array to a DataFrame for iterrows
         df_reduced = pd.DataFrame(df_reduced, columns=[f"dim_{i+1}" for i in range(df_reduced.shape[1])])
 
-        # Store original data with clusters in OpenSearch
+        # Store original data with clusters in OpenSearch with validity check
         for index, row in df.iterrows():
             doc = row.to_dict()
-            client.index(index=OS_INDEX, id=index, body=doc)
+
+            # Ensure the 'cluster' field contains a valid non-null vector before indexing
+            if isinstance(doc['cluster'], int) and doc['cluster'] != -1:
+                client.index(index=OS_INDEX, id=index, body=doc)
 
         # Store reduced-dimension data with cluster labels in OpenSearch
         for index, row in df_reduced.iterrows():
