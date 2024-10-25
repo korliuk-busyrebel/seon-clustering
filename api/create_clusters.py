@@ -66,6 +66,31 @@ async def create_clusters(file: UploadFile = File(...)):
         input_example = df_preprocessed.head(1)
         mlflow.sklearn.log_model(clustering_model, "dbscan_model", input_example=input_example)
 
+        # Calculate the number of dimensions based on the preprocessed data
+        dimension = df_preprocessed.shape[1]
+
+        # Create an OpenSearch index for clusters with dynamically calculated dimensions
+        index_name = OS_INDEX
+        index_body = {
+            "settings": {
+                "index": {
+                    "knn": True
+                }
+            },
+            "mappings": {
+                "properties": {
+                    "cluster": {
+                        "type": "knn_vector",
+                        "dimension": dimension
+                    }
+                }
+            }
+        }
+
+        # Check if the index already exists, and if not, create it
+        if not client.indices.exists(index=index_name):
+            client.indices.create(index=index_name, body=index_body)
+
         # Optimal dimensionality reduction using PCA + UMAP
         df_reduced = reduce_dimensions_optimal(df_preprocessed)
 
