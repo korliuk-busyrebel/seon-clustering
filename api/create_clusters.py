@@ -21,7 +21,7 @@ router = APIRouter()
 OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
-OS_KNN_INDEX = os.getenv("OS_INDEX", "clustered_knn_data")
+OS_KNN_INDEX = os.getenv("OS_KNN_INDEX", "clustered_knn_data")
 REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")
@@ -94,10 +94,10 @@ async def create_clusters(file: UploadFile = File(...)):
         # Store original data with clusters in OpenSearch with validity check
         for index, row in df.iterrows():
             doc = row.to_dict()
-
+            client.index(index=OS_INDEX, id=index, body=doc)
             # Ensure the 'id' field contains a valid non-null vector before indexing
-            if isinstance(doc['id'], int) and doc['id'] != -1:
-                client.index(index=OS_INDEX, id=index, body=doc)
+            #if isinstance(doc['id'], int) and doc['id'] != -1:
+
 
         # Store reduced-dimension data with cluster labels in OpenSearch
         for index, row in df_reduced.iterrows():
@@ -113,7 +113,7 @@ async def create_clusters(file: UploadFile = File(...)):
             }
             client.index(index=OS_KNN_INDEX, id=idx, body=doc)
 
-        return {"message": f"KNN index '{OS_INDEX}' prepared with {dimension} dimensions."}
+        return {"message": f"KNN index '{OS_KNN_INDEX}' prepared with {dimension} dimensions."}
         # Calculate evaluation metrics
         silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
 
