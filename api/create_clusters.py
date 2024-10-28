@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, UploadFile
 import pandas as pd
+import numpy as np
 from sklearn.cluster import DBSCAN  # for DBSCAN clustering algorithm
 from io import StringIO
 from services.clustering import find_optimal_dbscan, assign_noise_points
@@ -15,7 +16,6 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 router = APIRouter()
-
 
 # Initialize OpenSearch client
 OS_HOST = os.getenv("OS_HOST", "localhost")
@@ -95,9 +95,6 @@ async def create_clusters(file: UploadFile = File(...)):
         for index, row in df.iterrows():
             doc = row.to_dict()
             client.index(index=OS_INDEX, id=index, body=doc)
-            # Ensure the 'id' field contains a valid non-null vector before indexing
-            #if isinstance(doc['id'], int) and doc['id'] != -1:
-
 
         # Store reduced-dimension data with cluster labels in OpenSearch
         for index, row in df_reduced.iterrows():
@@ -105,13 +102,28 @@ async def create_clusters(file: UploadFile = File(...)):
             doc['cluster'] = df['cluster'].iloc[index]
             client.index(index=REDUCED_INDEX, id=index, body=doc)
 
-        # Index each document's vector
-        for idx, vector in enumerate(df):
-            doc = {
-                "vector": vector.tolist(),  # Convert numpy array to list
-                "id": str(df.iloc[idx].get('id', idx))  # Use provided ID or default to row index
-            }
-            client.index(index=OS_KNN_INDEX, id=idx, body=doc)
+        # Ensure 'vector' data in the DataFrame is properly formatted for KNN indexing
+        for idx, row in df.iterrows():
+            doc = row.to_dict()
+
+            # Ensure 'vector' field is a list or array with valid data
+            vector = doc.get("vector")
+            if isinstance(vector, str):
+                # Convert string to list (assuming the string format is '[1, 2, 3, ...]')
+                vector = eval(vector)  # Use eval cautiously; a safer alternative is ast.literal_eval
+
+            if isinstance(vector, (list, np.ndarray)) and len(vector) == dimension:
+                doc["vector"] = np.array(vector).tolist()  # Ensure it is a list
+                client.index(index=OS_KNN_INDEX, id=idx, body=doc)
+            else:
+                print(f"Skipping document at index {idx} due to missing or invalid vector.")
+        # # Index each document's vector
+        # for idx, vector in enumerate(df):
+        #     doc = {
+        #         "vector": vector.tolist(),  # Convert numpy array to list
+        #         "id": str(df.iloc[idx].get('id', idx))  # Use provided ID or default to row index
+        #     }
+        #     client.index(index=OS_KNN_INDEX, id=idx, body=doc)
 
         return {"message": f"KNN index '{OS_KNN_INDEX}' prepared with {dimension} dimensions."}
         # Calculate evaluation metrics
