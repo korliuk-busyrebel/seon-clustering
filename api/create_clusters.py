@@ -21,6 +21,7 @@ router = APIRouter()
 OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+OS_KNN_INDEX = os.getenv("OS_INDEX", "clustered_knn_data")
 REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")
@@ -70,23 +71,16 @@ async def create_clusters(file: UploadFile = File(...)):
         dimension = df_preprocessed.shape[1]
 
         # Create an OpenSearch index for clusters with dynamically calculated dimensions
-        index_name = OS_INDEX
+        index_name = OS_KNN_INDEX
         index_body = {
-            "settings": {
-                "index": {
-                    "knn": True
-                }
-            },
+            "settings": {"index": {"knn": True}},
             "mappings": {
                 "properties": {
-                    "id": {
-                        "type": "knn_vector",
-                        "dimension": dimension
-                    }
+                    "vector": {"type": "knn_vector", "dimension": dimension},
+                    "id": {"type": "keyword"},  # Document metadata fields
                 }
             }
         }
-
         # Check if the index already exists, and if not, create it
         if not client.indices.exists(index=index_name):
             client.indices.create(index=index_name, body=index_body)
@@ -111,6 +105,15 @@ async def create_clusters(file: UploadFile = File(...)):
             doc['cluster'] = df['cluster'].iloc[index]
             client.index(index=REDUCED_INDEX, id=index, body=doc)
 
+        # Index each document's vector
+        for idx, vector in enumerate(df):
+            doc = {
+                "vector": vector.tolist(),  # Convert numpy array to list
+                "id": str(df.iloc[idx].get('id', idx))  # Use provided ID or default to row index
+            }
+            client.index(index=OS_KNN_INDEX, id=idx, body=doc)
+
+        return {"message": f"KNN index '{OS_INDEX}' prepared with {dimension} dimensions."}
         # Calculate evaluation metrics
         silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
 

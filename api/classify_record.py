@@ -16,6 +16,7 @@ router = APIRouter()
 OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
 OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
+OS_KNN_INDEX = os.getenv("OS_INDEX", "clustered_knn_data")
 REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")
@@ -39,7 +40,6 @@ async def classify_record(record: dict):
     record_preprocessed = preprocess_data(record_data, column_weights)
 
     # Convert the preprocessed record to a list (vector) for k-NN search
-    #vector = record_preprocessed.values[0].tolist()
     vector = record_preprocessed.iloc[0].tolist()
     # Perform k-NN search in OpenSearch to find the nearest cluster
     # Construct the correct KNN query
@@ -47,7 +47,7 @@ async def classify_record(record: dict):
         "size": 10,
         "query": {
             "knn": {
-                "id": {
+                "vector": {
                     "vector": vector,
                     "k": 10
                 }
@@ -57,7 +57,7 @@ async def classify_record(record: dict):
 
     # Perform search
     try:
-        response = client.search(index=OS_INDEX, body=knn_query)
+        response = client.search(index=OS_KNN_INDEX, body=knn_query)
         # Extract the relevant result from the response
         knn_result = response['hits']['hits'][0]['_source']
         return knn_result
