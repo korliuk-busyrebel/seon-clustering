@@ -36,19 +36,26 @@ class ClassifyRequest(BaseModel):
 
 @router.post("/classify-record/")
 async def classify_record(request: ClassifyRequest):
-    # Define required fields based on the keys in column weights
-    required_fields = list(load_column_weights('/app/utils/column_weights.json').keys())
+    # Load column weights to define required fields (all 898)
+    column_weights = load_column_weights('/app/utils/column_weights.json')
+    required_fields = list(column_weights.keys())
 
-    # Merge `request.record` with default values for missing fields
-    record_data = pd.DataFrame([{**{field: 0 for field in required_fields}, **request.record}])
+    # Fill in missing fields with default value (0) if not present in the input
+    # This step ensures that we always have 898 dimensions by padding missing fields
+    input_record = {**{field: 0 for field in required_fields}, **request.record}
+    record_data = pd.DataFrame([input_record])
 
     # Preprocess the record to get the feature vector
-    record_preprocessed = preprocess_data(record_data, load_column_weights('/app/utils/column_weights.json'))
+    record_preprocessed = preprocess_data(record_data, column_weights)
 
     # Convert the preprocessed record to a list (vector) for k-NN search
     vector = record_preprocessed.iloc[0].tolist()
 
-    # Perform k-NN search in OpenSearch to find the nearest clusters
+    # Check if vector has 898 dimensions, if not, raise an error
+    if len(vector) != 898:
+        raise ValueError(f"Preprocessed vector has invalid dimensions: {len(vector)}. Expected 898.")
+
+    # Perform k-NN search with the specified number of nearest neighbors
     knn_query = {
         "size": request.k,
         "query": {
@@ -61,7 +68,7 @@ async def classify_record(request: ClassifyRequest):
         }
     }
 
-    # Perform search and handle the response
+    # Execute search and return results
     try:
         response = client.search(index=OS_KNN_INDEX, body=knn_query)
         knn_results = [
