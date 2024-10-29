@@ -1,23 +1,21 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
 import pandas as pd
 from services.preprocessing import preprocess_data
-from services.opensearch_client import classify_record_opensearch
-from opensearchpy import OpenSearch
 from utils.column_weights import load_column_weights
+from opensearchpy import OpenSearch
 import urllib3
 import os
+
 # Suppress the InsecureRequestWarning
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 router = APIRouter()
 
-
 # Initialize OpenSearch client
 OS_HOST = os.getenv("OS_HOST", "localhost")
 OS_PORT = os.getenv("OS_PORT", 9200)
-OS_INDEX = os.getenv("OS_INDEX", "clustered_data")
 OS_KNN_INDEX = os.getenv("OS_KNN_INDEX", "clustered_knn_data")
-REDUCED_INDEX = os.getenv("OS_REDUCED_INDEX", "clustered_data_visual")
 OS_SCHEME = os.getenv("OS_SCHEME", "http")
 OS_USERNAME = os.getenv("OS_USERNAME", "admin")
 OS_PASSWORD = os.getenv("OS_PASSWORD", "admin")
@@ -31,9 +29,14 @@ client = OpenSearch(
     timeout=60
 )
 
+# Define request model
+class ClassifyRequest(BaseModel):
+    record: dict
+    k: int = 10  # Default to 10 nearest neighbors
+
 @router.post("/classify-record/")
-async def classify_record(record: dict):
-    record_data = pd.DataFrame([record])
+async def classify_record(request: ClassifyRequest):
+    record_data = pd.DataFrame([request.record])
     column_weights = load_column_weights('/app/utils/column_weights.json')
 
     # Preprocess the record to get the feature vector
@@ -41,29 +44,36 @@ async def classify_record(record: dict):
 
     # Convert the preprocessed record to a list (vector) for k-NN search
     vector = record_preprocessed.iloc[0].tolist()
-    # Perform k-NN search in OpenSearch to find the nearest cluster
-    # Construct the correct KNN query
+
+    # Perform k-NN search in OpenSearch to find the nearest clusters
     knn_query = {
-        "size": 10,
+        "size": request.k,
         "query": {
             "knn": {
                 "vector": {
                     "vector": vector,
-                    "k": 10
+                    "k": request.k
                 }
             }
         }
     }
 
-    # Perform search
+    # Perform search and handle the response
     try:
         response = client.search(index=OS_KNN_INDEX, body=knn_query)
-        # Extract the relevant result from the response
-        knn_result = response['hits']['hits'][0]['_source']
-        return knn_result
+        knn_results = [
+            {
+                "id": hit["_id"],
+                "score": hit["_score"],
+                "vector": hit["_source"].get("vector", []),
+                "cluster": hit["_source"].get("cluster")
+            }
+            for hit in response['hits']['hits']
+        ]
+        return {"nearest_neighbors": knn_results}
     except Exception as e:
         print(f"Error during KNN search: {e}")
-        return None
+        return {"error": str(e)}
 
 # Export the router for use in the main app
 classify_record = router
