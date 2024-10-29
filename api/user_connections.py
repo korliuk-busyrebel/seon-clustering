@@ -18,7 +18,14 @@ class ConnectionRequest(BaseModel):
 async def get_user_connections(request: ConnectionRequest):
     # Load the investigated user's data from OpenSearch
     try:
-        user_data = client.get(index=request.index, id=request.user_id)["_source"]
+        user_data = client.search(
+            index=request.index,
+            body={
+                "query": {
+                    "term": {"id": request.user_id}  # Use `id` field
+                }
+            }
+        )["_source"]
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"User {request.user_id} not found: {e}")
 
