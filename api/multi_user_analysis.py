@@ -1,13 +1,7 @@
-# multi_user_analysis.py
-
-from fastapi import APIRouter
 from pydantic import BaseModel
-from opensearchpy import OpenSearch
-from utils.opensearch_client import client, router
+from utils.opensearch_client import client, router, OS_KNN_INDEX
 from utils.column_weights import load_column_weights
 from datetime import datetime
-import os
-import urllib3
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')

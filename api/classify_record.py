@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 import pandas as pd
 from services.preprocessing import preprocess_data
-from utils.opensearch_client import client, router
+from utils.opensearch_client import client, router, OS_KNN_INDEX
 from utils.column_weights import load_column_weights
 
 
