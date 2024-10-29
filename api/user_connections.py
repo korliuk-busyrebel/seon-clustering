@@ -15,17 +15,33 @@ class ConnectionRequest(BaseModel):
 
 @router.post("/user-connections/")
 async def get_user_connections(request: ConnectionRequest):
-    # Load the investigated user data from OpenSearch
-    user_data = client.get(index=OS_KNN_INDEX, id=request.user_id)["_source"]
+    # Load the investigated user's data from OpenSearch
+    try:
+        user_data = client.get(index=OS_KNN_INDEX, id=request.user_id)["_source"]
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"User {request.user_id} not found: {e}")
+
     column_weights = load_column_weights('/app/utils/column_weights.json')
 
-    if not user_data:
-        raise HTTPException(status_code=404, detail=f"User {request.user_id} not found.")
-
-    # Preprocess the investigated user's data
+    # Preprocess the investigated user's data to create the vector for k-NN search
     user_vector = preprocess_data(pd.DataFrame([user_data]), column_weights).iloc[0].tolist()
+    user_cluster_id = user_data.get("cluster")
 
-    # KNN search to find connected users
+    if user_cluster_id is None:
+        raise HTTPException(status_code=400, detail="Cluster ID is missing for the requested user.")
+
+    # Query OpenSearch to retrieve all users in the same cluster
+    cluster_query = {
+        "size": 100,  # Adjust based on expected cluster size and OpenSearch limits
+        "query": {
+            "term": {"cluster": user_cluster_id}
+        }
+    }
+    cluster_response = client.search(index=OS_KNN_INDEX, body=cluster_query)
+    all_cluster_users = cluster_response['hits']['hits']
+    num_users_in_cluster = len(all_cluster_users)
+
+    # KNN search to find the nearest neighbors of the investigated user
     knn_query = {
         "size": request.k,
         "query": {
@@ -39,7 +55,7 @@ async def get_user_connections(request: ConnectionRequest):
     }
 
     try:
-        # Perform the search
+        # Perform the k-NN search
         response = client.search(index=OS_KNN_INDEX, body=knn_query)
         connections = []
 
@@ -52,7 +68,7 @@ async def get_user_connections(request: ConnectionRequest):
             if closeness >= request.min_closeness:
                 connections.append({
                     "user_id": hit["_id"],
-                    "num_users_in_cluster": connected_user_data.get("num_users_in_cluster", 1),
+                    "num_users_in_cluster": num_users_in_cluster,
                     "closeness": round(closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
                     "shared_values": shared_values,
