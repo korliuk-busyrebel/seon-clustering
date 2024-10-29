@@ -32,15 +32,12 @@ async def multi_user_analysis(request: MultiUserRequest):
                 continue
 
             user_data = user_search['hits']['hits'][0]["_source"]
-            user_vector = preprocess_data(pd.DataFrame([user_data]), column_weights).iloc[0].tolist()
+            user_vector = user_data.get("vector", [])
+            if not user_vector or len(user_vector) != 898:
+                print(f"User {user_id} vector is missing or incorrect dimension.")
+                continue
 
-            # Ensure the vector is exactly 898 dimensions
-            if len(user_vector) < 898:
-                user_vector.extend([0] * (898 - len(user_vector)))
-            elif len(user_vector) > 898:
-                user_vector = user_vector[:898]
-
-            print(f"User vector for ID {user_id}: {user_vector[:10]}... (truncated)")
+            print(f"Loaded user vector for ID {user_id}: {user_vector[:10]}... (truncated)")
 
         except Exception as e:
             print(f"Error retrieving data for user with id {user_id}: {e}")
@@ -71,14 +68,10 @@ async def multi_user_analysis(request: MultiUserRequest):
             if connected_user_id == user_id:
                 continue
 
-            # Preprocess connected user data to get feature vector
-            connected_user_vector = preprocess_data(pd.DataFrame([connected_user_data]), column_weights).iloc[
-                0].tolist()
-
-            if len(connected_user_vector) < 898:
-                connected_user_vector.extend([0] * (898 - len(connected_user_vector)))
-            elif len(connected_user_vector) > 898:
-                connected_user_vector = connected_user_vector[:898]
+            connected_user_vector = connected_user_data.get("vector", [])
+            if not connected_user_vector or len(connected_user_vector) != 898:
+                print(f"Skipping connected user {connected_user_id} due to missing or incorrect vector.")
+                continue
 
             # Calculate closeness as cosine similarity
             closeness_score = np.dot(user_vector, connected_user_vector) / (
@@ -102,14 +95,14 @@ async def multi_user_analysis(request: MultiUserRequest):
                     "num_shared_values": len(shared_values),
                     "earliest_date_of_sharing": connected_user_data.get("share_date", datetime.now().isoformat())
                 })
-                print(
-                    f"Connected User ID: {connected_user_id}, Closeness: {final_closeness}, Shared Values: {shared_values}")
+                print(f"Connected User ID: {connected_user_id}, Closeness: {final_closeness}, Shared Values: {shared_values}")
 
     # Sort all results by closeness score in descending order
     results = sorted(results, key=lambda x: x['closeness'], reverse=True)
     print(f"Final connected users list: {results}")
 
     return {"connected_users": results}
+
 
 
 # Export the router for integration into the main FastAPI app

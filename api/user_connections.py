@@ -30,13 +30,11 @@ async def user_connections(request: ConnectionRequest):
             raise HTTPException(status_code=404, detail=f"User {request.user_id} not found in index {user_index}.")
 
         user_data = user_search['hits']['hits'][0]["_source"]
-        user_vector = preprocess_data(pd.DataFrame([user_data]), column_weights).iloc[0].tolist()
+        user_vector = user_data.get("vector", [])
 
         # Ensure the vector matches the expected 898 dimensions
-        if len(user_vector) < 898:
-            user_vector.extend([0] * (898 - len(user_vector)))
-        elif len(user_vector) > 898:
-            user_vector = user_vector[:898]
+        if not user_vector or len(user_vector) != 898:
+            raise HTTPException(status_code=400, detail="User vector has invalid dimensions.")
 
         print(f"User vector for ID {request.user_id}: {user_vector[:10]}... (truncated)")
 
@@ -64,22 +62,35 @@ async def user_connections(request: ConnectionRequest):
         for hit in response['hits']['hits']:
             connected_user_data = hit["_source"]
             connected_user_id = connected_user_data.get("id")
+            connected_user_vector = connected_user_data.get("vector", [])
 
-            # Calculate shared values and closeness
+            # Skip if vector is missing or incorrect dimension
+            if not connected_user_vector or len(connected_user_vector) != 898:
+                print(f"Skipping connected user {connected_user_id} due to invalid vector.")
+                continue
+
+            # Calculate cosine similarity between vectors
+            closeness_score = np.dot(user_vector, connected_user_vector) / (
+                np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
+            )
+
             shared_values, num_shared_values = extract_shared_values(user_data, connected_user_data)
-            closeness = calculate_closeness(shared_values, column_weights)
-            print(f"Connected User ID: {connected_user_id}, Closeness: {closeness}, Shared Values: {shared_values}")
+            shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
+
+            # Final closeness score combining vector similarity and shared values
+            final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
 
             # Apply minimum closeness filter
-            if closeness >= request.min_closeness:
+            if final_closeness >= request.min_closeness:
                 connections.append({
                     "user_id": connected_user_id,
-                    "closeness": round(closeness * 100, 2),
+                    "closeness": round(final_closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
                     "shared_values": shared_values,
                     "num_shared_values": num_shared_values,
                     "earliest_shared_date": connected_user_data.get("share_date")
                 })
+                print(f"Connected User ID: {connected_user_id}, Closeness: {final_closeness}, Shared Values: {shared_values}")
 
         connections = sorted(connections, key=lambda x: -x["closeness"])
         print(f"Final connections list: {connections}")
@@ -89,6 +100,17 @@ async def user_connections(request: ConnectionRequest):
     except Exception as e:
         print(f"Error retrieving user connections: {e}")
         return {"error": str(e)}
+
+
+# Helper function to calculate closeness
+def calculate_closeness(shared_values, weights):
+    return sum(weights.get(feature, 1) for feature in shared_values)
+
+
+def extract_shared_values(user_data, connected_user_data):
+    shared_values = {key: value for key, value in user_data.items() if
+                     key in connected_user_data and user_data[key] == connected_user_data[key]}
+    return shared_values, len(shared_values)
 
 # Export the router for use in the main app
 user_connections = router
