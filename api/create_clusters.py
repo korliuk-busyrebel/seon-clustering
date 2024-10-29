@@ -105,12 +105,14 @@ async def create_clusters(file: UploadFile = File(...)):
         # Prepare and add 'vector' and 'id' fields using preprocessed data
         for idx, row in df.iterrows():
             # Generate the vector for KNN search from preprocessed data
+            unique_id = str(row['id'])
             vector = df_preprocessed.iloc[idx].values.tolist()  # Convert to list format
-
+            cluster = row['cluster']
             # Create a minimal document with only 'id' and 'vector'
             doc = {
-                "id": str(idx),  # or use a unique identifier from your data if available
-                "vector": vector
+                "id": unique_id,
+                "vector": vector,
+                "cluster": cluster
             }
 
             # Index the document with the minimal fields
