@@ -6,10 +6,11 @@ from utils.column_weights import load_column_weights
 
 
 
-# Define request model
+# Define request model with optional index parameter
 class ClassifyRequest(BaseModel):
     record: dict
     k: int = 10  # Default to 10 nearest neighbors
+    index: str = "clustered_knn_data"  # Default index name, can be overridden in the request
 
 @router.post("/classify-record/")
 async def classify_record(request: ClassifyRequest):
@@ -29,11 +30,9 @@ async def classify_record(request: ClassifyRequest):
 
     # Check if the vector matches the expected 898 dimensions
     if len(vector) < 898:
-        # Pad vector with zeros to reach 898 dimensions
-        vector.extend([0] * (898 - len(vector)))
+        vector.extend([0] * (898 - len(vector)))  # Pad vector to 898 dimensions
     elif len(vector) > 898:
-        # Trim vector to 898 if it has excess dimensions (unlikely but safe)
-        vector = vector[:898]
+        vector = vector[:898]  # Trim vector to 898 dimensions if needed
 
     # Perform k-NN search with the specified number of nearest neighbors
     knn_query = {
@@ -48,9 +47,9 @@ async def classify_record(request: ClassifyRequest):
         }
     }
 
-    # Execute search and handle the response
+    # Execute search with the specified index and handle the response
     try:
-        response = client.search(index=OS_KNN_INDEX, body=knn_query)
+        response = client.search(index=request.index, body=knn_query)
         knn_results = [
             {
                 "id": hit["_id"],

@@ -11,13 +11,14 @@ class ConnectionRequest(BaseModel):
     user_id: str
     min_closeness: float = 0.5  # Minimum closeness as a percentage
     k: int = 10  # Default nearest neighbors
+    index: str = "clustered_knn_data"  # Default index name, can be overridden
 
 
 @router.post("/user-connections/")
 async def get_user_connections(request: ConnectionRequest):
     # Load the investigated user's data from OpenSearch
     try:
-        user_data = client.get(index=OS_KNN_INDEX, id=request.user_id)["_source"]
+        user_data = client.get(index=request.index, id=request.user_id)["_source"]
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"User {request.user_id} not found: {e}")
 
@@ -32,12 +33,12 @@ async def get_user_connections(request: ConnectionRequest):
 
     # Query OpenSearch to retrieve all users in the same cluster
     cluster_query = {
-        "size": 100,  # Adjust based on expected cluster size and OpenSearch limits
+        "size": 10,  # Adjust based on expected cluster size and OpenSearch limits
         "query": {
             "term": {"cluster": user_cluster_id}
         }
     }
-    cluster_response = client.search(index=OS_KNN_INDEX, body=cluster_query)
+    cluster_response = client.search(index=request.index, body=cluster_query)
     all_cluster_users = cluster_response['hits']['hits']
     num_users_in_cluster = len(all_cluster_users)
 
@@ -56,7 +57,7 @@ async def get_user_connections(request: ConnectionRequest):
 
     try:
         # Perform the k-NN search
-        response = client.search(index=OS_KNN_INDEX, body=knn_query)
+        response = client.search(index=request.index, body=knn_query)
         connections = []
 
         for hit in response['hits']['hits']:
