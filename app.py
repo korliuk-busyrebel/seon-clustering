@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from api.create_clusters import create_clusters
 from api.classify_record import classify_record
 from api.multi_user_analysis import multi_user_analysis
-from api.get_user_connections import get_user_connections
+from api.user_connections import get_user_connections
 
 # Initialize FastAPI app
 app = FastAPI()
