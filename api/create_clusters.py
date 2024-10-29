@@ -102,29 +102,19 @@ async def create_clusters(file: UploadFile = File(...)):
             doc['cluster'] = df['cluster'].iloc[index]
             client.index(index=REDUCED_INDEX, id=index, body=doc)
 
-        # Ensure 'vector' data in the DataFrame is properly formatted for KNN indexing
+        # Prepare and add 'vector' and 'id' fields using preprocessed data
         for idx, row in df.iterrows():
-            doc = row.to_dict()
+            # Generate the vector for KNN search from preprocessed data
+            vector = df_preprocessed.iloc[idx].values.tolist()  # Convert to list format
 
-            # Ensure 'vector' field is a list or array with valid data
-            vector = doc.get("vector")
-            if isinstance(vector, str):
-                # Convert string to list (assuming the string format is '[1, 2, 3, ...]')
-                vector = eval(vector)  # Use eval cautiously; a safer alternative is ast.literal_eval
+            # Create a minimal document with only 'id' and 'vector'
+            doc = {
+                "id": str(idx),  # or use a unique identifier from your data if available
+                "vector": vector
+            }
 
-            if isinstance(vector, (list, np.ndarray)) and len(vector) == dimension:
-                doc["vector"] = np.array(vector).tolist()  # Ensure it is a list
-                client.index(index=OS_KNN_INDEX, id=idx, body=doc)
-            else:
-                print(f"Skipping document at index {idx} due to missing or invalid vector.")
-        # # Index each document's vector
-        # for idx, vector in enumerate(df):
-        #     doc = {
-        #         "vector": vector.tolist(),  # Convert numpy array to list
-        #         "id": str(df.iloc[idx].get('id', idx))  # Use provided ID or default to row index
-        #     }
-        #     client.index(index=OS_KNN_INDEX, id=idx, body=doc)
-
+            # Index the document with the minimal fields
+            client.index(index=OS_KNN_INDEX, id=idx, body=doc)
         return {"message": f"KNN index '{OS_KNN_INDEX}' prepared with {dimension} dimensions."}
         # Calculate evaluation metrics
         silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
