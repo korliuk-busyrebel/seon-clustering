@@ -99,4 +99,4 @@ async def multi_user_analysis(request: MultiUserRequest):
     return {"connected_users": results}
 
 # Export the router for integration into the main FastAPI app
-multi_user_analysis_router = router
+multi_user_analysis = router

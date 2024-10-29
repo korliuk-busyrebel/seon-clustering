@@ -113,4 +113,4 @@ def extract_shared_values(user_data, connected_user_data):
     return shared_values, len(shared_values)
 
 # Export the router for use in the main app
-user_connections_router = router
+user_connections = router
