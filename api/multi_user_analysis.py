@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from utils.opensearch_client import client, router, OS_KNN_INDEX
 from utils.column_weights import load_column_weights
+from services.preprocessing import preprocess_data
 from datetime import datetime
 
 # Load column weights for closeness calculations
