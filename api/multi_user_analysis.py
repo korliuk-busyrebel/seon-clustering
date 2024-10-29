@@ -21,16 +21,27 @@ async def multi_user_analysis(request: MultiUserRequest):
     for user_id in request.user_ids:
         user_index = request.index
 
-        # Retrieve the user's data and cluster ID
+        # Retrieve user data by `id` field (instead of _id)
         try:
-            user_data = client.get(index=user_index, id=user_id)["_source"]
+            # Use OpenSearch query to find the document by `id` field
+            user_data_query = {
+                "query": {
+                    "term": {"id": user_id}
+                }
+            }
+            user_search = client.search(index=user_index, body=user_data_query)
+            if not user_search['hits']['hits']:
+                print(f"User with id {user_id} not found in index {user_index}.")
+                continue
+
+            user_data = user_search['hits']['hits'][0]["_source"]
         except Exception as e:
-            print(f"Error retrieving data for user {user_id}: {e}")
+            print(f"Error retrieving data for user with id {user_id}: {e}")
             continue
 
         user_cluster_id = user_data.get("cluster")
         if user_cluster_id is None:
-            print(f"User {user_id} does not have a cluster ID.")
+            print(f"User with id {user_id} does not have a cluster ID.")
             continue
 
         # Preprocess user data to get vector representation
@@ -50,25 +61,24 @@ async def multi_user_analysis(request: MultiUserRequest):
         # Closeness calculation for each user in the same cluster
         for connected_user in cluster_users:
             connected_user_data = connected_user["_source"]
-            connected_user_id = connected_user["_id"]
+            connected_user_id = connected_user_data.get("id")
 
             # Skip if it's the same user
             if connected_user_id == user_id:
                 continue
 
-            # Preprocess connected user data
+            # Preprocess connected user data to get feature vector
             connected_user_vector = preprocess_data(pd.DataFrame([connected_user_data]), column_weights).iloc[0].tolist()
 
             # Calculate closeness as cosine similarity
             closeness_score = np.dot(user_vector, connected_user_vector) / (
                     np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
-            # Calculate shared values and additional weight
-            shared_values = [key for key in user_data.keys()
-                             if user_data[key] == connected_user_data.get(key) and key in column_weights]
+            # Calculate additional weight based on shared values
+            shared_values = [key for key in user_data.keys() if user_data[key] == connected_user_data.get(key) and key in column_weights]
             shared_value_score = sum(column_weights[key] for key in shared_values) / sum(column_weights.values())
 
-            # Weighted final closeness
+            # Final weighted closeness score
             final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
 
             # Filter by minimum closeness

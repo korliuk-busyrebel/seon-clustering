@@ -16,36 +16,38 @@ class ConnectionRequest(BaseModel):
 
 @router.post("/user-connections/")
 async def get_user_connections(request: ConnectionRequest):
-    # Load the investigated user's data from OpenSearch
+    user_index = request.index
+
+    # Retrieve user data by `id` field (not `_id`)
     try:
-        user_data = client.search(
-            index=request.index,
-            body={
-                "query": {
-                    "term": {"id": request.user_id}  # Use `id` field
-                }
+        user_data_query = {
+            "query": {
+                "term": {"id": request.user_id}
             }
-        )["_source"]
+        }
+        user_search = client.search(index=user_index, body=user_data_query)
+        if not user_search['hits']['hits']:
+            raise HTTPException(status_code=404, detail=f"User {request.user_id} not found in index {user_index}.")
+
+        user_data = user_search['hits']['hits'][0]["_source"]
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"User {request.user_id} not found: {e}")
+        raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
 
-    column_weights = load_column_weights('/app/utils/column_weights.json')
-
-    # Preprocess the investigated user's data to create the vector for k-NN search
-    user_vector = preprocess_data(pd.DataFrame([user_data]), column_weights).iloc[0].tolist()
     user_cluster_id = user_data.get("cluster")
-
     if user_cluster_id is None:
         raise HTTPException(status_code=400, detail="Cluster ID is missing for the requested user.")
 
+    # Preprocess the user's data to create the vector for k-NN search
+    user_vector = preprocess_data(pd.DataFrame([user_data]), column_weights).iloc[0].tolist()
+
     # Query OpenSearch to retrieve all users in the same cluster
     cluster_query = {
-        "size": 10,  # Adjust based on expected cluster size and OpenSearch limits
+        "size": 100,
         "query": {
             "term": {"cluster": user_cluster_id}
         }
     }
-    cluster_response = client.search(index=request.index, body=cluster_query)
+    cluster_response = client.search(index=user_index, body=cluster_query)
     all_cluster_users = cluster_response['hits']['hits']
     num_users_in_cluster = len(all_cluster_users)
 
@@ -64,24 +66,27 @@ async def get_user_connections(request: ConnectionRequest):
 
     try:
         # Perform the k-NN search
-        response = client.search(index=request.index, body=knn_query)
+        response = client.search(index=user_index, body=knn_query)
         connections = []
 
         for hit in response['hits']['hits']:
             connected_user_data = hit["_source"]
+            connected_user_id = connected_user_data.get("id")
+
+            # Calculate shared values and closeness
             shared_values, num_shared_values = extract_shared_values(user_data, connected_user_data)
             closeness = calculate_closeness(shared_values, column_weights)
 
             # Apply minimum closeness filter
             if closeness >= request.min_closeness:
                 connections.append({
-                    "user_id": hit["_id"],
+                    "user_id": connected_user_id,
                     "num_users_in_cluster": num_users_in_cluster,
                     "closeness": round(closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
                     "shared_values": shared_values,
                     "num_shared_values": num_shared_values,
-                    "earliest_shared_date": connected_user_data.get("earliest_shared_date")
+                    "earliest_shared_date": connected_user_data.get("share_date")
                 })
 
         # Rank connections by closeness, with higher weights prioritizing rare shared connections
@@ -92,7 +97,6 @@ async def get_user_connections(request: ConnectionRequest):
         print(f"Error retrieving user connections: {e}")
         return {"error": str(e)}
 
-
 # Helper function to calculate closeness
 def calculate_closeness(shared_values, weights):
     closeness = 0
@@ -102,13 +106,11 @@ def calculate_closeness(shared_values, weights):
         closeness += feature_weight
     return closeness
 
-
 # Extract shared values based on the intersection of non-zero features
 def extract_shared_values(user_data, connected_user_data):
     shared_values = {key: value for key, value in user_data.items() if
                      key in connected_user_data and user_data[key] == connected_user_data[key]}
     return shared_values, len(shared_values)
 
-
 # Export the router for use in the main app
-user_connections = router
+user_connections_router = router
