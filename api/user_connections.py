@@ -38,6 +38,8 @@ async def user_connections(request: ConnectionRequest):
         elif len(user_vector) > 898:
             user_vector = user_vector[:898]
 
+        print(f"User vector for ID {request.user_id}: {user_vector[:10]}... (truncated)")
+
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
 
@@ -56,6 +58,7 @@ async def user_connections(request: ConnectionRequest):
 
     try:
         response = client.search(index=user_index, body=knn_query)
+        print(f"KNN query response: {response}")
         connections = []
 
         for hit in response['hits']['hits']:
@@ -65,6 +68,7 @@ async def user_connections(request: ConnectionRequest):
             # Calculate shared values and closeness
             shared_values, num_shared_values = extract_shared_values(user_data, connected_user_data)
             closeness = calculate_closeness(shared_values, column_weights)
+            print(f"Connected User ID: {connected_user_id}, Closeness: {closeness}, Shared Values: {shared_values}")
 
             # Apply minimum closeness filter
             if closeness >= request.min_closeness:
@@ -78,26 +82,13 @@ async def user_connections(request: ConnectionRequest):
                 })
 
         connections = sorted(connections, key=lambda x: -x["closeness"])
+        print(f"Final connections list: {connections}")
+
         return {"connected_users": connections}
 
     except Exception as e:
         print(f"Error retrieving user connections: {e}")
         return {"error": str(e)}
-
-
-# Helper function to calculate closeness
-def calculate_closeness(shared_values, weights):
-    closeness = 0
-    for feature, value in shared_values.items():
-        feature_weight = weights.get(feature, 1)
-        closeness += feature_weight
-    return closeness
-
-
-def extract_shared_values(user_data, connected_user_data):
-    shared_values = {key: value for key, value in user_data.items() if
-                     key in connected_user_data and user_data[key] == connected_user_data[key]}
-    return shared_values, len(shared_values)
 
 # Export the router for use in the main app
 user_connections = router
