@@ -78,7 +78,6 @@ async def classify_record(request: ClassifyRequest):
             {
                 "id": hit["_id"],
                 "score": hit["_score"],
-                "vector": hit["_source"].get("vector", []),
                 "cluster": hit["_source"].get("cluster")
             }
             for hit in response['hits']['hits']
