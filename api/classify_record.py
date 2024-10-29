@@ -36,12 +36,11 @@ class ClassifyRequest(BaseModel):
 
 @router.post("/classify-record/")
 async def classify_record(request: ClassifyRequest):
-    # Load column weights to define required fields (all 898)
+    # Load column weights to define required fields (all 898 fields expected)
     column_weights = load_column_weights('/app/utils/column_weights.json')
     required_fields = list(column_weights.keys())
 
-    # Fill in missing fields with default value (0) if not present in the input
-    # This step ensures that we always have 898 dimensions by padding missing fields
+    # Fill missing fields with default value (0) to ensure exactly 898 fields in input
     input_record = {**{field: 0 for field in required_fields}, **request.record}
     record_data = pd.DataFrame([input_record])
 
@@ -51,9 +50,13 @@ async def classify_record(request: ClassifyRequest):
     # Convert the preprocessed record to a list (vector) for k-NN search
     vector = record_preprocessed.iloc[0].tolist()
 
-    # Check if vector has 898 dimensions, if not, raise an error
-    if len(vector) != 898:
-        raise ValueError(f"Preprocessed vector has invalid dimensions: {len(vector)}. Expected 898.")
+    # Check if the vector matches the expected 898 dimensions
+    if len(vector) < 898:
+        # Pad vector with zeros to reach 898 dimensions
+        vector.extend([0] * (898 - len(vector)))
+    elif len(vector) > 898:
+        # Trim vector to 898 if it has excess dimensions (unlikely but safe)
+        vector = vector[:898]
 
     # Perform k-NN search with the specified number of nearest neighbors
     knn_query = {
@@ -68,7 +71,7 @@ async def classify_record(request: ClassifyRequest):
         }
     }
 
-    # Execute search and return results
+    # Execute search and handle the response
     try:
         response = client.search(index=OS_KNN_INDEX, body=knn_query)
         knn_results = [

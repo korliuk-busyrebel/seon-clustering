@@ -4,7 +4,7 @@
   "data": {
     "url": {
       "%context%": true,
-      "index": "test-clusters-visual",
+      "index": "big-clusters-visual",
       "body": {
         "size": 1000,
         "_source": ["dim_1", "dim_2", "cluster"]
