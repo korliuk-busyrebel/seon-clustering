@@ -15,7 +15,7 @@ class ConnectionRequest(BaseModel):
 
 
 @router.post("/user-connections/")
-async def get_user_connections(request: ConnectionRequest):
+async def user_connections(request: ConnectionRequest):
     user_index = request.index
 
     # Retrieve user data by `id` field (not `_id`)

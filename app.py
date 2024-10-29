@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from api.create_clusters import create_clusters
 from api.classify_record import classify_record
 from api.multi_user_analysis import multi_user_analysis
-from api.user_connections import get_user_connections
+from api.user_connections import user_connections
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -11,4 +11,4 @@ app = FastAPI()
 app.include_router(create_clusters)
 app.include_router(classify_record)
 app.include_router(multi_user_analysis)
-app.include_router(get_user_connections)
+app.include_router(user_connections)
