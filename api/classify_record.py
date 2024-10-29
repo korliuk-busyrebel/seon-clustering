@@ -36,16 +36,14 @@ class ClassifyRequest(BaseModel):
 
 @router.post("/classify-record/")
 async def classify_record(request: ClassifyRequest):
-    record_data = pd.DataFrame([request.record])
-    column_weights = load_column_weights('/app/utils/column_weights.json')
+    # Define required fields based on the keys in column weights
+    required_fields = list(load_column_weights('/app/utils/column_weights.json').keys())
 
-    required_fields = list(column_weights.keys())  # All 898 fields are expected here
-
-    # Fill missing fields with a default value (e.g., zero)
-    record_data = pd.DataFrame([{**{field: 0 for field in required_fields}, **request}])
+    # Merge `request.record` with default values for missing fields
+    record_data = pd.DataFrame([{**{field: 0 for field in required_fields}, **request.record}])
 
     # Preprocess the record to get the feature vector
-    record_preprocessed = preprocess_data(record_data, column_weights)
+    record_preprocessed = preprocess_data(record_data, load_column_weights('/app/utils/column_weights.json'))
 
     # Convert the preprocessed record to a list (vector) for k-NN search
     vector = record_preprocessed.iloc[0].tolist()
