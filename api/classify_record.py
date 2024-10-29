@@ -42,7 +42,7 @@ async def classify_record(request: ClassifyRequest):
     required_fields = list(column_weights.keys())  # All 898 fields are expected here
 
     # Fill missing fields with a default value (e.g., zero)
-    record_data = pd.DataFrame([{**{field: 0 for field in required_fields}, **record}])
+    record_data = pd.DataFrame([{**{field: 0 for field in required_fields}, **request}])
 
     # Preprocess the record to get the feature vector
     record_preprocessed = preprocess_data(record_data, column_weights)
