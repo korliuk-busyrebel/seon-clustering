@@ -14,6 +14,7 @@ class ConnectionRequest(BaseModel):
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
 
+
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
     user_index = request.index
@@ -56,6 +57,11 @@ async def user_connections(request: ConnectionRequest):
         for hit in response['hits']['hits']:
             connected_user_data = hit["_source"]
             connected_user_id = connected_user_data.get("id")
+
+            # Exclude the requested user_id from results
+            if connected_user_id == request.user_id:
+                continue
+
             connected_user_vector = connected_user_data.get("vector", [])
 
             # Skip if vector is missing or incorrect dimension
@@ -67,16 +73,28 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
-            # Adjust closeness based only on vector similarity
-            if closeness_score >= request.min_closeness:
+            shared_values = {
+                key: user_data[key] for key in user_data.keys()
+                if key in connected_user_data and user_data[key] == connected_user_data[key] and key in column_weights
+            }
+            num_shared_values = len(shared_values)
+
+            # Calculate final closeness score combining vector similarity and shared values
+            shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
+            final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
+
+            # Apply minimum closeness filter
+            if final_closeness >= request.min_closeness:
                 connections.append({
                     "user_id": connected_user_id,
-                    "closeness": round(closeness_score * 100, 2),  # Present closeness as percentage
+                    "closeness": round(final_closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
+                    "shared_values": shared_values,
+                    "num_shared_values": num_shared_values,
                     "earliest_shared_date": connected_user_data.get("share_date")
                 })
 
-        # Sort results by highest closeness score
+        # Rank connections by closeness, with higher weights prioritizing rare shared connections
         connections = sorted(connections, key=lambda x: -x["closeness"])
 
         return {"connected_users": connections}
