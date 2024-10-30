@@ -1,15 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import pandas as pd
-from services.preprocessing import preprocess_data
-from utils.opensearch_client import client, router, OS_KNN_INDEX
+from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
 import numpy as np
 
-
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
-
 
 # Define request models
 class ConnectionRequest(BaseModel):
@@ -17,7 +13,6 @@ class ConnectionRequest(BaseModel):
     min_closeness: float = 0.5  # Minimum closeness as a percentage
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
-
 
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
@@ -38,8 +33,6 @@ async def user_connections(request: ConnectionRequest):
         if not user_vector or len(user_vector) != 898:
             raise HTTPException(status_code=400, detail="User vector has invalid dimensions.")
 
-        print(f"User vector for ID {request.user_id}: {user_vector[:10]}... (truncated)")
-
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
 
@@ -58,7 +51,6 @@ async def user_connections(request: ConnectionRequest):
 
     try:
         response = client.search(index=user_index, body=knn_query)
-        print(f"KNN query response: {response}")
         connections = []
 
         for hit in response['hits']['hits']:
@@ -68,7 +60,6 @@ async def user_connections(request: ConnectionRequest):
 
             # Skip if vector is missing or incorrect dimension
             if not connected_user_vector or len(connected_user_vector) != 898:
-                print(f"Skipping connected user {connected_user_id} due to invalid vector.")
                 continue
 
             # Calculate cosine similarity between vectors
@@ -76,32 +67,23 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
-            shared_values, num_shared_values = extract_shared_values(user_data, connected_user_data)
-            shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
-
-            # Final closeness score combining vector similarity and shared values
-            final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
-
-            # Apply minimum closeness filter
-            if final_closeness >= request.min_closeness:
+            # Adjust closeness based only on vector similarity
+            if closeness_score >= request.min_closeness:
                 connections.append({
                     "user_id": connected_user_id,
-                    "closeness": round(final_closeness * 100, 2),
+                    "closeness": round(closeness_score * 100, 2),  # Present closeness as percentage
                     "user_name": connected_user_data.get("user_name", "N/A"),
-                    "shared_values": shared_values,
-                    "num_shared_values": num_shared_values,
                     "earliest_shared_date": connected_user_data.get("share_date")
                 })
-                print(f"Connected User ID: {connected_user_id}, Closeness: {final_closeness}, Shared Values: {shared_values}")
 
+        # Sort results by highest closeness score
         connections = sorted(connections, key=lambda x: -x["closeness"])
-        print(f"Final connections list: {connections}")
 
         return {"connected_users": connections}
 
     except Exception as e:
-        print(f"Error retrieving user connections: {e}")
         return {"error": str(e)}
+
 
 
 # Helper function to calculate closeness

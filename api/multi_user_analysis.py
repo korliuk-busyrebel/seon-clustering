@@ -1,20 +1,18 @@
+from fastapi import APIRouter
 from pydantic import BaseModel
-from utils.opensearch_client import client, router, OS_KNN_INDEX
+from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
-from services.preprocessing import preprocess_data
-from datetime import datetime
 import numpy as np
+from datetime import datetime
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
-
 
 # Define request model with an optional index parameter
 class MultiUserRequest(BaseModel):
     user_ids: list
     min_closeness: float = 0.5  # Minimum closeness threshold
     index: str = "clustered_knn_data"  # Default index name, can be overridden in the request
-
 
 @router.post("/multi-user-analysis/")
 async def multi_user_analysis(request: MultiUserRequest):
@@ -23,7 +21,7 @@ async def multi_user_analysis(request: MultiUserRequest):
     for user_id in request.user_ids:
         user_index = request.index
 
-        # Retrieve user data by `id` field (not `_id`)
+        # Retrieve user data by `id` field and get vector
         try:
             user_data_query = {"query": {"term": {"id": user_id}}}
             user_search = client.search(index=user_index, body=user_data_query)
@@ -74,16 +72,18 @@ async def multi_user_analysis(request: MultiUserRequest):
                 print(f"Skipping connected user {connected_user_id} due to missing or incorrect vector.")
                 continue
 
-            # Calculate closeness as cosine similarity
+            # Calculate cosine similarity between vectors
             closeness_score = np.dot(user_vector, connected_user_vector) / (
                     np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
+            # Calculate shared values score
             shared_values = [
                 key for key in user_data.keys()
                 if user_data[key] == connected_user_data.get(key) and key in column_weights
             ]
             shared_value_score = sum(column_weights[key] for key in shared_values) / sum(column_weights.values())
 
+            # Combine vector closeness and shared value scores
             final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
 
             if final_closeness >= request.min_closeness:
@@ -103,8 +103,6 @@ async def multi_user_analysis(request: MultiUserRequest):
     print(f"Final connected users list: {results}")
 
     return {"connected_users": results}
-
-
 
 # Export the router for integration into the main FastAPI app
 multi_user_analysis = router
