@@ -77,11 +77,11 @@ async def multi_user_analysis(request: MultiUserRequest):
             closeness_score = np.dot(user_vector, connected_user_vector) / (
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
-            # Extract shared values: match vector indices with feature names and ignore zeros
+            # Extract shared values: match vector indices with feature names, ignore zeros, and exclude features with zero weights
             shared_values = {
                 column_names[i]: user_vector[i]
                 for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0 and column_names[i] in column_weights
+                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights.get(column_names[i], 0.0) != 0.0
             }
             num_shared_values = len(shared_values)
 

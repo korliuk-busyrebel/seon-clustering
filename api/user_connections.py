@@ -74,11 +74,12 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
-            # Identify shared non-zero fields from vector
-            shared_values = [
-                vector_field_names[i] for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0 and vector_field_names[i] in column_weights
-            ]
+            # Extract shared values: match vector indices with feature names and ignore zeros
+            shared_values = {
+                vector_field_names[i]: user_vector[i]
+                for i in range(len(user_vector))
+                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights.get(vector_field_names[i], 0.0) != 0.0
+            }
             num_shared_values = len(shared_values)
 
             # Calculate final closeness score combining vector similarity and shared values
@@ -91,7 +92,7 @@ async def user_connections(request: ConnectionRequest):
                     "user_id": connected_user_id,
                     "closeness": round(final_closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
-                    "shared_values": shared_values,  # List of shared field names
+                    "shared_values": shared_values,  # Dictionary of shared field names and values
                     "num_shared_values": num_shared_values,  # Count of shared fields
                     "earliest_shared_date": connected_user_data.get("share_date")
                 })
@@ -110,5 +111,5 @@ def calculate_closeness(shared_values, weights):
     return sum(weights.get(feature, 1) for feature in shared_values)
 
 
-# Export the router for use in the main app
+# Export the router for use in the main FastAPI app
 user_connections = router
