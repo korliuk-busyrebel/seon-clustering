@@ -37,8 +37,6 @@ async def multi_user_analysis(request: MultiUserRequest):
                 print(f"User {user_id} vector is missing or incorrect dimension.")
                 continue
 
-            print(f"Loaded user vector for ID {user_id}: {user_vector[:10]}... (truncated)")
-
         except Exception as e:
             print(f"Error retrieving data for user with id {user_id}: {e}")
             continue
@@ -58,7 +56,6 @@ async def multi_user_analysis(request: MultiUserRequest):
         cluster_response = client.search(index=user_index, body=cluster_query)
         cluster_users = cluster_response['hits']['hits']
         num_users_in_cluster = len(cluster_users)
-        print(f"Number of users in cluster {user_cluster_id}: {num_users_in_cluster}")
 
         # Closeness calculation for each user in the cluster
         closest_users = []
@@ -76,13 +73,14 @@ async def multi_user_analysis(request: MultiUserRequest):
 
             # Calculate closeness as cosine similarity
             closeness_score = np.dot(user_vector, connected_user_vector) / (
-                    np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
+                np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
+            # Calculate shared values and their count
             shared_values = [
                 key for key in user_data.keys()
                 if user_data[key] == connected_user_data.get(key) and key in column_weights
             ]
-            shared_value_score = sum(column_weights[key] for key in shared_values) / sum(column_weights.values())
+            shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
 
             final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
 
@@ -96,7 +94,6 @@ async def multi_user_analysis(request: MultiUserRequest):
                     "num_shared_values": len(shared_values),
                     "earliest_date_of_sharing": connected_user_data.get("share_date", datetime.now().isoformat())
                 })
-                print(f"Connected User ID: {connected_user_id}, Closeness: {final_closeness}, Shared Values: {shared_values}")
 
         # Store closest users for this user_id
         results.append({user_id: closest_users})

@@ -73,11 +73,11 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
-            # Find shared values based on specific fields in `column_weights`
-            shared_values = {
-                key: user_data[key] for key in user_data.keys()
-                if key in connected_user_data and user_data[key] == connected_user_data[key] and key in column_weights
-            }
+            # Identify shared values by matching specific fields
+            shared_values = [
+                key for key in column_weights.keys()  # Only consider weighted fields
+                if key in user_data and key in connected_user_data and user_data[key] == connected_user_data[key]
+            ]
             num_shared_values = len(shared_values)
 
             # Calculate final closeness score combining vector similarity and shared values
@@ -90,8 +90,8 @@ async def user_connections(request: ConnectionRequest):
                     "user_id": connected_user_id,
                     "closeness": round(final_closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
-                    "shared_values": shared_values,
-                    "num_shared_values": num_shared_values,
+                    "shared_values": shared_values,  # List of shared field names
+                    "num_shared_values": num_shared_values,  # Count of shared fields
                     "earliest_shared_date": connected_user_data.get("share_date")
                 })
 
