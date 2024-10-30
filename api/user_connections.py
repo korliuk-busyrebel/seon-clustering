@@ -6,6 +6,7 @@ import numpy as np
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
+vector_field_names = list(column_weights.keys())  # Maintain order based on `column_weights.json`
 
 # Define request models
 class ConnectionRequest(BaseModel):
@@ -73,10 +74,10 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
-            # Identify shared values by matching specific fields
+            # Identify shared non-zero fields from vector
             shared_values = [
-                key for key in column_weights.keys()  # Only consider weighted fields
-                if key in user_data and key in connected_user_data and user_data[key] == connected_user_data[key]
+                vector_field_names[i] for i in range(len(user_vector))
+                if user_vector[i] == connected_user_vector[i] != 0.0
             ]
             num_shared_values = len(shared_values)
 
@@ -108,11 +109,6 @@ async def user_connections(request: ConnectionRequest):
 def calculate_closeness(shared_values, weights):
     return sum(weights.get(feature, 1) for feature in shared_values)
 
-
-def extract_shared_values(user_data, connected_user_data):
-    shared_values = {key: value for key, value in user_data.items() if
-                     key in connected_user_data and user_data[key] == connected_user_data[key]}
-    return shared_values, len(shared_values)
 
 # Export the router for use in the main app
 user_connections = router
