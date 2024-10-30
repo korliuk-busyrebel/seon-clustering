@@ -73,6 +73,7 @@ async def user_connections(request: ConnectionRequest):
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
             )
 
+            # Find shared values based on specific fields in `column_weights`
             shared_values = {
                 key: user_data[key] for key in user_data.keys()
                 if key in connected_user_data and user_data[key] == connected_user_data[key] and key in column_weights
@@ -101,7 +102,6 @@ async def user_connections(request: ConnectionRequest):
 
     except Exception as e:
         return {"error": str(e)}
-
 
 
 # Helper function to calculate closeness
