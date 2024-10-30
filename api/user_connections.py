@@ -77,7 +77,7 @@ async def user_connections(request: ConnectionRequest):
             # Identify shared non-zero fields from vector
             shared_values = [
                 vector_field_names[i] for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0
+                if user_vector[i] == connected_user_vector[i] != 0.0 and vector_field_names[i] in column_weights
             ]
             num_shared_values = len(shared_values)
 

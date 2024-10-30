@@ -81,7 +81,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             shared_values = {
                 column_names[i]: user_vector[i]
                 for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] and user_vector[i] != 0.0
+                if user_vector[i] == connected_user_vector[i] != 0.0 and column_names[i] in column_weights
             }
             num_shared_values = len(shared_values)
 
