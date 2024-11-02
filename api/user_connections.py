@@ -1,4 +1,4 @@
-rom fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
