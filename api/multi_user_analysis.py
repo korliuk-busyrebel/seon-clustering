@@ -9,6 +9,31 @@ from datetime import datetime
 column_weights = load_column_weights('/app/utils/column_weights.json')
 column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
+
+def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
+    """
+    Identifies shared values between user_vector and connected_user_vector.
+
+    Parameters:
+    - user_vector: List of values for the main user.
+    - connected_user_vector: List of values for the connected user.
+    - column_names: List of feature names corresponding to vector indices.
+    - column_weights: Dictionary of feature weights from column_weights.json.
+
+    Returns:
+    - A dictionary of shared values where both vectors have the same non-zero value,
+      and the feature weight is non-zero.
+    """
+    shared_values = {
+        column_names[i]: user_vector[i]
+        for i in range(len(user_vector))
+        if (
+                user_vector[i] == connected_user_vector[i] != 0.0  # Identical non-zero values
+                and column_weights.get(column_names[i], 0.0) != 0.0  # Non-zero weight in column_weights
+        )
+    }
+    return shared_values
+
 # Define request model with an optional index parameter
 class MultiUserRequest(BaseModel):
     user_ids: list
@@ -73,16 +98,12 @@ async def multi_user_analysis(request: MultiUserRequest):
                 print(f"Skipping connected user {connected_user_id} due to missing or incorrect vector.")
                 continue
 
-            # Calculate closeness as cosine similarity
+            # Calculate cosine similarity between vectors
             closeness_score = np.dot(user_vector, connected_user_vector) / (
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
-            # Extract shared values: match vector indices with feature names, ignore zeros, and exclude features with zero weights
-            shared_values = {
-                column_names[i]: user_vector[i]
-                for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights.get(column_names[i], 0.0) != 0.0
-            }
+            # Use the helper function to get shared values
+            shared_values = get_shared_values(user_vector, connected_user_vector, column_names, column_weights)
             num_shared_values = len(shared_values)
 
             # Calculate final closeness score, combining vector similarity and shared values
