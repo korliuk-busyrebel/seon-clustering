@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
-feature_names = [feature for feature, weight in column_weights.items() if weight != 0.0]  # Only non-zero weight features
+column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
 # Define request model with an optional index parameter
 class MultiUserRequest(BaseModel):
@@ -35,7 +35,7 @@ async def multi_user_analysis(request: MultiUserRequest):
 
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
-            if not user_vector or len(user_vector) != len(feature_names):
+            if not user_vector or len(user_vector) != 898:
                 print(f"User {user_id} vector is missing or incorrect dimension.")
                 continue
 
@@ -69,7 +69,7 @@ async def multi_user_analysis(request: MultiUserRequest):
                 continue
 
             connected_user_vector = connected_user_data.get("vector", [])
-            if not connected_user_vector or len(connected_user_vector) != len(feature_names):
+            if not connected_user_vector or len(connected_user_vector) != 898:
                 print(f"Skipping connected user {connected_user_id} due to missing or incorrect vector.")
                 continue
 
@@ -77,11 +77,11 @@ async def multi_user_analysis(request: MultiUserRequest):
             closeness_score = np.dot(user_vector, connected_user_vector) / (
                 np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector))
 
-            # Extract shared values: match vector indices with feature names and ignore zeros
+            # Extract shared values: match vector indices with feature names, ignore zeros, and exclude features with zero weights
             shared_values = {
-                feature_names[i]: user_vector[i]
+                column_names[i]: user_vector[i]
                 for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights[feature_names[i]] != 0.0
+                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights.get(column_names[i], 0.0) != 0.0
             }
             num_shared_values = len(shared_values)
 

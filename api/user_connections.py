@@ -6,9 +6,7 @@ import numpy as np
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
-
-# Create a list of feature names that correspond to vector indices
-feature_names = [feature for feature, weight in column_weights.items() if weight != 0.0]
+vector_field_names = list(column_weights.keys())  # Maintain order based on `column_weights.json`
 
 # Define request models
 class ConnectionRequest(BaseModel):
@@ -16,6 +14,7 @@ class ConnectionRequest(BaseModel):
     min_closeness: float = 0.5  # Minimum closeness as a percentage
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
+
 
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
@@ -106,5 +105,11 @@ async def user_connections(request: ConnectionRequest):
     except Exception as e:
         return {"error": str(e)}
 
-# Export the router for use in the main app
+
+# Helper function to calculate closeness
+def calculate_closeness(shared_values, weights):
+    return sum(weights.get(feature, 1) for feature in shared_values)
+
+
+# Export the router for use in the main FastAPI app
 user_connections = router
