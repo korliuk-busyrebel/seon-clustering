@@ -64,14 +64,13 @@ async def user_connections(request: ConnectionRequest):
         "size": request.k,
         "query": {
             "knn": {
-                "field": "vector",
-                "query_vector": user_vector,  # Ensure user_vector is passed as an array
-                "k": request.k,
-                "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
+                "vector": {
+                "query_vector": user_vector,
+                "k": request.k
+                }
             }
         }
     }
-
     try:
         knn_response = client.search(index=user_index, body=knn_query)
         connections = []
