@@ -33,8 +33,9 @@ async def multi_user_analysis(request: MultiUserRequest):
 
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
-            if not isinstance(user_vector, list) or len(user_vector) != 898:
-                print(f"User {user_id} vector is missing or incorrect dimension.")
+            # Ensure user_vector is a list of numbers
+            if not isinstance(user_vector, list) or not all(isinstance(x, (int, float)) for x in user_vector) or len(user_vector) != 898:
+                print(f"User {user_id} vector is missing, incorrect, or has invalid dimensions.")
                 continue
 
         except Exception as e:
@@ -47,7 +48,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             "query": {
                 "knn": {
                     "field": "vector",
-                    "query_vector": user_vector,
+                    "query_vector": user_vector,  # Ensure this is a list, not a string
                     "k": request.k,
                     "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
                 }
@@ -58,7 +59,6 @@ async def multi_user_analysis(request: MultiUserRequest):
             cluster_response = client.search(index=user_index, body=knn_query)
             cluster_users = cluster_response['hits']['hits']
             num_users_in_cluster = len(cluster_users)
-            print(f"Found {num_users_in_cluster} users in cluster for user ID {user_id}")
 
             closest_users = []
             for connected_user in cluster_users:
@@ -90,7 +90,7 @@ async def multi_user_analysis(request: MultiUserRequest):
                 final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
 
                 # Apply minimum closeness filter
-                if final_closeness >= request.min_closeness * 100:  # Adjust for percentage comparison
+                if final_closeness >= request.min_closeness:
                     closest_users.append({
                         "user_id": connected_user_id,
                         "num_users_in_cluster": num_users_in_cluster,
@@ -108,7 +108,6 @@ async def multi_user_analysis(request: MultiUserRequest):
             continue
 
     return {"connected_users_per_user": results}
-
 
 # Export the router for integration into the main FastAPI app
 multi_user_analysis = router

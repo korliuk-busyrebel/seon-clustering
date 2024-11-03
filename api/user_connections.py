@@ -8,14 +8,12 @@ from datetime import datetime
 column_weights = load_column_weights('/app/utils/column_weights.json')
 column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
-
 # Define request models
 class ConnectionRequest(BaseModel):
     user_id: str
     min_closeness: float = 0.5  # Minimum closeness as a percentage
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
-
 
 def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
     """
@@ -28,7 +26,6 @@ def get_shared_values(user_vector, connected_user_vector, column_names, column_w
         if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
     }
     return shared_values
-
 
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
@@ -45,9 +42,9 @@ async def user_connections(request: ConnectionRequest):
         user_data = user_search['hits']['hits'][0]["_source"]
         user_vector = user_data.get("vector", [])
 
-        # Validate user_vector to ensure it's a list
-        if not isinstance(user_vector, list) or len(user_vector) != 898:
-            raise HTTPException(status_code=400, detail="User vector has invalid dimensions.")
+        # Validate user_vector to ensure it's a list of floats or integers
+        if not isinstance(user_vector, list) or not all(isinstance(x, (float, int)) for x in user_vector) or len(user_vector) != 898:
+            raise HTTPException(status_code=400, detail="User vector has invalid dimensions or data types.")
 
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
@@ -58,7 +55,7 @@ async def user_connections(request: ConnectionRequest):
         "query": {
             "knn": {
                 "field": "vector",
-                "query_vector": user_vector,  # Make sure user_vector is an array
+                "query_vector": user_vector,  # Ensure user_vector is passed as an array
                 "k": request.k,
                 "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
             }
@@ -111,7 +108,6 @@ async def user_connections(request: ConnectionRequest):
 
     except Exception as e:
         return {"error": str(e)}
-
 
 # Export the router for use in the main app
 user_connections = router
