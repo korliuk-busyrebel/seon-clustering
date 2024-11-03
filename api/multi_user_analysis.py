@@ -8,12 +8,14 @@ from datetime import datetime
 column_weights = load_column_weights('/app/utils/column_weights.json')
 column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
+
 # Define request model with an optional index parameter
 class MultiUserRequest(BaseModel):
     user_ids: list
     min_closeness: float = 0.5  # Minimum closeness threshold
     index: str = "clustered_knn_data"  # Default index name, can be overridden in the request
     k: int = 100  # Default number of users to retrieve from the cluster, can be overridden
+
 
 @router.post("/multi-user-analysis/")
 async def multi_user_analysis(request: MultiUserRequest):
@@ -33,9 +35,18 @@ async def multi_user_analysis(request: MultiUserRequest):
 
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
-            # Ensure user_vector is a list of numbers
-            if not isinstance(user_vector, list) or not all(isinstance(x, (int, float)) for x in user_vector) or len(user_vector) != 898:
-                print(f"User {user_id} vector is missing, incorrect, or has invalid dimensions.")
+
+            # Confirm `user_vector` is a list of floats and convert if necessary
+            if isinstance(user_vector, str):
+                user_vector = eval(user_vector)  # Use with caution
+            elif not isinstance(user_vector, list) or not all(isinstance(x, (float, int)) for x in user_vector):
+                print(f"User vector for user id {user_id} has invalid dimensions or data types.")
+                continue
+
+            # Ensure `user_vector` has exactly 898 dimensions
+            user_vector = [float(x) for x in user_vector]
+            if len(user_vector) != 898:
+                print(f"User vector for user id {user_id} does not have 898 dimensions.")
                 continue
 
         except Exception as e:
@@ -48,7 +59,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             "query": {
                 "knn": {
                     "field": "vector",
-                    "query_vector": user_vector,  # Ensure this is a list, not a string
+                    "query_vector": user_vector,  # Ensure this is a properly formatted array
                     "k": request.k,
                     "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
                 }
@@ -85,7 +96,8 @@ async def multi_user_analysis(request: MultiUserRequest):
                 num_shared_values = len(shared_values)
 
                 # Calculate a final closeness score
-                shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
+                shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(
+                    column_weights.values())
                 final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
                 final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
 
@@ -108,6 +120,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             continue
 
     return {"connected_users_per_user": results}
+
 
 # Export the router for integration into the main FastAPI app
 multi_user_analysis = router
