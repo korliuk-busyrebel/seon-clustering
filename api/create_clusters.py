@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Define a router
 router = APIRouter()
 
+# Function to handle the clustering process in the background
 def process_clusters(df: pd.DataFrame):
     logger.info("Starting clustering process...")
 
@@ -57,7 +58,7 @@ def process_clusters(df: pd.DataFrame):
         df_reduced = reduce_dimensions_optimal(df_preprocessed)
         df_reduced = pd.DataFrame(df_reduced, columns=[f"dim_{i + 1}" for i in range(df_reduced.shape[1])])
 
-        # Store reduced-dimension data in OpenSearch
+        # Store reduced dimension data in OpenSearch
         logger.info("Storing reduced dimension data in OpenSearch...")
         for i in range(0, len(df_reduced), batch_size):
             batch = df_reduced[i:i + batch_size]
@@ -98,4 +99,12 @@ async def create_clusters(file: UploadFile = File(...), background_tasks: Backgr
     # Load data in chunks to avoid memory issues with very large files
     df = pd.read_csv(StringIO(contents.decode('utf-8')), chunksize=50000)
     df = pd.concat(df)
-    logger.info
+    logger.info("Data successfully loaded in chunks.")
+
+    # Add the clustering task to the background
+    background_tasks.add_task(process_clusters, df)
+
+    return {"message": "Cluster creation started in background."}
+
+# Export the router for use in the main app
+create_clusters = router
