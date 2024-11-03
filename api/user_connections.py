@@ -2,11 +2,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
-import numpy as np
+from services.shared_values import get_shared_values  # Helper function for shared values extraction
+from datetime import datetime
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
-vector_field_names = list(column_weights.keys())  # Maintain order based on `column_weights.json`
+column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
 # Define request models
 class ConnectionRequest(BaseModel):
@@ -30,32 +31,30 @@ async def user_connections(request: ConnectionRequest):
 
         user_data = user_search['hits']['hits'][0]["_source"]
         user_vector = user_data.get("vector", [])
-
-        # Ensure the vector matches the expected dimensions
-        if not user_vector or len(user_vector) != len(feature_names):
+        if not user_vector or len(user_vector) != 898:
             raise HTTPException(status_code=400, detail="User vector has invalid dimensions.")
 
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
 
-    # Perform KNN search with this vector
+    # Perform KNN search to get top `k` most similar users
     knn_query = {
         "size": request.k,
         "query": {
             "knn": {
-                "vector": {
-                    "vector": user_vector,
-                    "k": request.k
-                }
+                "field": "vector",
+                "query_vector": user_vector,
+                "k": request.k,
+                "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
             }
         }
     }
 
     try:
-        response = client.search(index=user_index, body=knn_query)
+        knn_response = client.search(index=user_index, body=knn_query)
         connections = []
 
-        for hit in response['hits']['hits']:
+        for hit in knn_response['hits']['hits']:
             connected_user_data = hit["_source"]
             connected_user_id = connected_user_data.get("id")
 
@@ -63,28 +62,20 @@ async def user_connections(request: ConnectionRequest):
             if connected_user_id == request.user_id:
                 continue
 
-            connected_user_vector = connected_user_data.get("vector", [])
+            # Get similarity score from OpenSearch KNN
+            similarity_score = hit["_score"]
 
-            # Skip if vector is missing or incorrect dimension
-            if not connected_user_vector or len(connected_user_vector) != len(feature_names):
+            connected_user_vector = connected_user_data.get("vector", [])
+            if not connected_user_vector or len(connected_user_vector) != 898:
                 continue
 
-            # Calculate cosine similarity between vectors
-            closeness_score = np.dot(user_vector, connected_user_vector) / (
-                np.linalg.norm(user_vector) * np.linalg.norm(connected_user_vector)
-            )
-
-            # Extract shared values based on matching non-zero weighted features
-            shared_values = {
-                feature_names[i]: user_vector[i]
-                for i in range(len(user_vector))
-                if user_vector[i] == connected_user_vector[i] != 0.0 and column_weights[feature_names[i]] != 0.0
-            }
+            # Calculate shared values using helper function
+            shared_values = get_shared_values(user_vector, connected_user_vector, column_names, column_weights)
             num_shared_values = len(shared_values)
 
-            # Calculate final closeness score, combining vector similarity and shared values
+            # Calculate final closeness score combining OpenSearch similarity and shared values
             shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
-            final_closeness = 0.7 * closeness_score + 0.3 * shared_value_score
+            final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
 
             # Apply minimum closeness filter
             if final_closeness >= request.min_closeness:
@@ -92,12 +83,12 @@ async def user_connections(request: ConnectionRequest):
                     "user_id": connected_user_id,
                     "closeness": round(final_closeness * 100, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
-                    "shared_values": shared_values,  # Dictionary of shared field names and values
-                    "num_shared_values": num_shared_values,  # Count of shared fields
-                    "earliest_shared_date": connected_user_data.get("share_date")
+                    "shared_values": shared_values,
+                    "num_shared_values": num_shared_values,
+                    "earliest_shared_date": connected_user_data.get("share_date", datetime.now().isoformat())
                 })
 
-        # Rank connections by closeness, with higher weights prioritizing rare shared connections
+        # Sort connections by closeness score
         connections = sorted(connections, key=lambda x: -x["closeness"])
 
         return {"connected_users": connections}
@@ -106,10 +97,5 @@ async def user_connections(request: ConnectionRequest):
         return {"error": str(e)}
 
 
-# Helper function to calculate closeness
-def calculate_closeness(shared_values, weights):
-    return sum(weights.get(feature, 1) for feature in shared_values)
-
-
-# Export the router for use in the main FastAPI app
+# Export the router for use in the main app
 user_connections = router
