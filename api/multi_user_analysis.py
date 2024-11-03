@@ -24,6 +24,7 @@ async def multi_user_analysis(request: MultiUserRequest):
 
         # Retrieve user data by `id` field
         try:
+            print(f"Fetching data for user_id: {user_id}")
             user_data_query = {"query": {"term": {"id": user_id}}}
             user_search = client.search(index=user_index, body=user_data_query)
 
@@ -34,18 +35,17 @@ async def multi_user_analysis(request: MultiUserRequest):
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
 
-            # Confirm `user_vector` is a list of floats and convert if necessary
+            # Check and convert user_vector to ensure it's a list of floats
             if isinstance(user_vector, str):
-                try:
-                    user_vector = eval(user_vector)  # Only use in a controlled environment
-                except Exception as e:
-                    print(f"Error parsing user_vector for user id {user_id}: {e}")
-                    continue
-
-            # Ensure `user_vector` is a list of floats with the correct dimension
+                print(f"Converting user_vector from string to list for user_id: {user_id}")
+                user_vector = eval(user_vector)  # Be cautious with eval in production
             user_vector = [float(x) for x in user_vector]
-            if len(user_vector) != 898:
-                print(f"User vector for user id {user_id} does not have 898 dimensions.")
+
+            print(f"user_vector for user_id {user_id} is now: {user_vector[:10]}...")  # Print first 10 values
+
+            # Ensure `user_vector` is a list of the correct length
+            if not isinstance(user_vector, list) or len(user_vector) != 898:
+                print(f"User vector for user_id {user_id} is missing or has incorrect dimensions.")
                 continue
 
         except Exception as e:
@@ -58,7 +58,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             "query": {
                 "knn": {
                     "field": "vector",
-                    "query_vector": user_vector,  # Confirm this is a properly formatted array
+                    "query_vector": user_vector,
                     "k": request.k,
                     "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
                 }
@@ -66,9 +66,10 @@ async def multi_user_analysis(request: MultiUserRequest):
         }
 
         try:
+            print(f"Performing KNN search for user_id: {user_id}")
             cluster_response = client.search(index=user_index, body=knn_query)
             cluster_users = cluster_response['hits']['hits']
-            num_users_in_cluster = len(cluster_users)
+            print(f"Found {len(cluster_users)} users in cluster for user_id {user_id}")
 
             closest_users = []
             for connected_user in cluster_users:
@@ -81,9 +82,11 @@ async def multi_user_analysis(request: MultiUserRequest):
 
                 # Get similarity score from OpenSearch's KNN plugin
                 similarity_score = connected_user["_score"]
+                print(f"Similarity score for connected_user_id {connected_user_id}: {similarity_score}")
 
                 connected_user_vector = connected_user_data.get("vector", [])
                 if not isinstance(connected_user_vector, list) or len(connected_user_vector) != 898:
+                    print(f"Skipping connected_user_id {connected_user_id} due to invalid vector.")
                     continue
 
                 # Extract shared values
@@ -93,17 +96,17 @@ async def multi_user_analysis(request: MultiUserRequest):
                     if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
                 }
                 num_shared_values = len(shared_values)
+                print(f"Shared values for connected_user_id {connected_user_id}: {shared_values}")
 
                 # Calculate a final closeness score
                 shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
                 final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
-                final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
+                final_closeness = min(final_closeness * 100, 100)
 
                 # Apply minimum closeness filter
                 if final_closeness >= request.min_closeness:
                     closest_users.append({
                         "user_id": connected_user_id,
-                        "num_users_in_cluster": num_users_in_cluster,
                         "closeness": round(final_closeness, 2),
                         "user_name": connected_user_data.get("user_name", "N/A"),
                         "shared_values": shared_values,
