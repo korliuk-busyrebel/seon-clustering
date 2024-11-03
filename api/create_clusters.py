@@ -1,7 +1,7 @@
 from fastapi import APIRouter, File, UploadFile, BackgroundTasks
 import pandas as pd
 import numpy as np
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN  # for DBSCAN clustering algorithm
 from io import StringIO
 from services.clustering import find_optimal_dbscan, assign_noise_points
 from services.dimensionality_reduction import reduce_dimensions_optimal
@@ -93,7 +93,7 @@ def process_clusters(df: pd.DataFrame):
     logger.info("Clustering process completed.")
 
 @router.post("/create-clusters/")
-async def create_clusters(file: UploadFile = File(...), background_tasks: BackgroundTasks):
+async def create_clusters(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     contents = await file.read()
 
     # Load data in chunks to avoid memory issues with very large files
