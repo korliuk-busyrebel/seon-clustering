@@ -35,15 +35,14 @@ async def multi_user_analysis(request: MultiUserRequest):
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
 
-            # Check and convert user_vector to ensure it's a list of floats
+            # Ensure `user_vector` is a list of floats
             if isinstance(user_vector, str):
                 print(f"Converting user_vector from string to list for user_id: {user_id}")
-                user_vector = eval(user_vector)  # Be cautious with eval in production
-            user_vector = [float(x) for x in user_vector]
+                user_vector = eval(user_vector)  # Caution with eval in production
+            user_vector = [float(x) for x in user_vector]  # Ensure list of floats
 
-            print(f"user_vector for user_id {user_id} is now: {user_vector[:10]}...")  # Print first 10 values
+            print(f"user_vector for user_id {user_id} is now: {user_vector[:10]}...")  # Show first 10 values for debugging
 
-            # Ensure `user_vector` is a list of the correct length
             if not isinstance(user_vector, list) or len(user_vector) != 898:
                 print(f"User vector for user_id {user_id} is missing or has incorrect dimensions.")
                 continue
@@ -58,7 +57,7 @@ async def multi_user_analysis(request: MultiUserRequest):
             "query": {
                 "knn": {
                     "field": "vector",
-                    "query_vector": user_vector,
+                    "query_vector": list(user_vector),  # Ensure it is a proper list format
                     "k": request.k,
                     "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
                 }
@@ -66,7 +65,7 @@ async def multi_user_analysis(request: MultiUserRequest):
         }
 
         try:
-            print(f"Performing KNN search for user_id: {user_id}")
+            print(f"Performing KNN search for user_id: {user_id} with query_vector of type: {type(user_vector)}")
             cluster_response = client.search(index=user_index, body=knn_query)
             cluster_users = cluster_response['hits']['hits']
             print(f"Found {len(cluster_users)} users in cluster for user_id {user_id}")
