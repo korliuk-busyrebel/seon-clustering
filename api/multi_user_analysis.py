@@ -56,10 +56,10 @@ async def multi_user_analysis(request: MultiUserRequest):
             "size": request.k,
             "query": {
                 "knn": {
-                    "field": "vector",
-                    "query_vector": list(user_vector),  # Ensure it is a proper list format
-                    "k": request.k,
-                    "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
+                    "vector": {
+                    "vector": list(user_vector),  # Ensure it is a proper list format
+                    "k": request.k
+                    }
                 }
             }
         }
