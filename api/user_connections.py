@@ -103,6 +103,7 @@ async def user_connections(request: ConnectionRequest):
             if final_closeness >= request.min_closeness:
                 connections.append({
                     "user_id": connected_user_id,
+                    "similarity": round(similarity_score, 2),
                     "closeness": round(final_closeness, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
                     "shared_values": shared_values,
