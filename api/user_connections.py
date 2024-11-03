@@ -65,8 +65,8 @@ async def user_connections(request: ConnectionRequest):
         "query": {
             "knn": {
                 "vector": {
-                "query_vector": user_vector,
-                "k": request.k
+                    "vector": user_vector,
+                    "k": request.k
                 }
             }
         }
