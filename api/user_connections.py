@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
-from services.shared_values import get_shared_values  # Helper function for shared values extraction
 from datetime import datetime
 
 # Load column weights for closeness calculations
@@ -16,6 +15,17 @@ class ConnectionRequest(BaseModel):
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
 
+def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
+    """
+    Extracts shared values between two vectors, ignoring zero-weight fields.
+    Returns a dictionary of shared field names and values.
+    """
+    shared_values = {
+        column_names[i]: user_vector[i]
+        for i in range(len(user_vector))
+        if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
+    }
+    return shared_values
 
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
