@@ -1,8 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from utils.opensearch_client import client, router
 from utils.column_weights import load_column_weights
-import numpy as np
 from datetime import datetime
 
 # Load column weights for closeness calculations
@@ -15,18 +14,6 @@ class MultiUserRequest(BaseModel):
     min_closeness: float = 0.5  # Minimum closeness threshold
     index: str = "clustered_knn_data"  # Default index name, can be overridden in the request
     k: int = 100  # Default number of users to retrieve from the cluster, can be overridden
-
-def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
-    """
-    Extracts shared values between two vectors, ignoring zero-weight fields.
-    Returns a dictionary of shared field names and values.
-    """
-    shared_values = {
-        column_names[i]: user_vector[i]
-        for i in range(len(user_vector))
-        if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
-    }
-    return shared_values
 
 @router.post("/multi-user-analysis/")
 async def multi_user_analysis(request: MultiUserRequest):
@@ -46,7 +33,7 @@ async def multi_user_analysis(request: MultiUserRequest):
 
             user_data = user_search['hits']['hits'][0]["_source"]
             user_vector = user_data.get("vector", [])
-            if not user_vector or len(user_vector) != 898:
+            if not isinstance(user_vector, list) or len(user_vector) != 898:
                 print(f"User {user_id} vector is missing or incorrect dimension.")
                 continue
 
@@ -54,63 +41,73 @@ async def multi_user_analysis(request: MultiUserRequest):
             print(f"Error retrieving data for user with id {user_id}: {e}")
             continue
 
-        user_cluster_id = user_data.get("cluster")
-        if user_cluster_id is None:
-            print(f"User with id {user_id} does not have a cluster ID.")
-            continue
-
-        # Retrieve all users in the same cluster with a customizable size (k)
-        cluster_query = {
+        # Perform KNN search using OpenSearch KNN plugin
+        knn_query = {
             "size": request.k,
             "query": {
-                "term": {"cluster": user_cluster_id}
+                "knn": {
+                    "field": "vector",
+                    "query_vector": user_vector,
+                    "k": request.k,
+                    "num_candidates": request.k * 2  # Adjust based on accuracy/performance needs
+                }
             }
         }
-        cluster_response = client.search(index=user_index, body=cluster_query)
-        cluster_users = cluster_response['hits']['hits']
-        num_users_in_cluster = len(cluster_users)
 
-        # Closeness calculation for each user in the cluster
-        closest_users = []
-        for connected_user in cluster_users:
-            connected_user_data = connected_user["_source"]
-            connected_user_id = connected_user_data.get("id")
+        try:
+            cluster_response = client.search(index=user_index, body=knn_query)
+            cluster_users = cluster_response['hits']['hits']
+            num_users_in_cluster = len(cluster_users)
 
-            if connected_user_id == user_id:
-                continue
+            closest_users = []
+            for connected_user in cluster_users:
+                connected_user_data = connected_user["_source"]
+                connected_user_id = connected_user_data.get("id")
 
-            connected_user_vector = connected_user_data.get("vector", [])
-            if not connected_user_vector or len(connected_user_vector) != 898:
-                print(f"Skipping connected user {connected_user_id} due to missing or incorrect vector.")
-                continue
+                # Exclude the requested user_id from results
+                if connected_user_id == user_id:
+                    continue
 
-            # Get similarity score from OpenSearch KNN plugin
-            similarity_score = connected_user["_score"]
+                # Get similarity score from OpenSearch's KNN plugin
+                similarity_score = connected_user["_score"]
 
-            # Calculate shared values using helper function
-            shared_values = get_shared_values(user_vector, connected_user_vector, column_names, column_weights)
-            num_shared_values = len(shared_values)
+                connected_user_vector = connected_user_data.get("vector", [])
+                if not isinstance(connected_user_vector, list) or len(connected_user_vector) != 898:
+                    continue
 
-            # Calculate final closeness score combining similarity and shared values
-            shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
-            final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
+                # Extract shared values
+                shared_values = {
+                    column_names[i]: user_vector[i]
+                    for i in range(len(user_vector))
+                    if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
+                }
+                num_shared_values = len(shared_values)
 
-            if final_closeness >= request.min_closeness:
-                closest_users.append({
-                    "user_id": connected_user_id,
-                    "num_users_in_cluster": num_users_in_cluster,
-                    "closeness": round(final_closeness * 100, 2),
-                    "user_name": connected_user_data.get("user_name", "N/A"),
-                    "shared_values": shared_values,
-                    "num_shared_values": num_shared_values,
-                    "earliest_date_of_sharing": connected_user_data.get("share_date", datetime.now().isoformat())
-                })
+                # Calculate a final closeness score
+                shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
+                final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
+                final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
 
-        # Store closest users for this user_id
-        results.append({user_id: closest_users})
+                # Apply minimum closeness filter
+                if final_closeness >= request.min_closeness:
+                    closest_users.append({
+                        "user_id": connected_user_id,
+                        "num_users_in_cluster": num_users_in_cluster,
+                        "closeness": round(final_closeness, 2),
+                        "user_name": connected_user_data.get("user_name", "N/A"),
+                        "shared_values": shared_values,
+                        "num_shared_values": num_shared_values,
+                        "earliest_date_of_sharing": connected_user_data.get("share_date", datetime.now().isoformat())
+                    })
 
-    # Return closest users grouped by each requested user ID
+            results.append({user_id: closest_users})
+
+        except Exception as e:
+            print(f"Error retrieving KNN results for user with id {user_id}: {e}")
+            continue
+
     return {"connected_users_per_user": results}
+
 
 # Export the router for integration into the main FastAPI app
 multi_user_analysis = router

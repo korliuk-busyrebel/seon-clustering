@@ -41,7 +41,7 @@ async def user_connections(request: ConnectionRequest):
 
         user_data = user_search['hits']['hits'][0]["_source"]
         user_vector = user_data.get("vector", [])
-        if not user_vector or len(user_vector) != 898:
+        if not isinstance(user_vector, list) or len(user_vector) != 898:
             raise HTTPException(status_code=400, detail="User vector has invalid dimensions.")
 
     except Exception as e:
@@ -76,7 +76,7 @@ async def user_connections(request: ConnectionRequest):
             similarity_score = hit["_score"]
 
             connected_user_vector = connected_user_data.get("vector", [])
-            if not connected_user_vector or len(connected_user_vector) != 898:
+            if not isinstance(connected_user_vector, list) or len(connected_user_vector) != 898:
                 continue
 
             # Calculate shared values using helper function
@@ -86,12 +86,13 @@ async def user_connections(request: ConnectionRequest):
             # Calculate final closeness score combining OpenSearch similarity and shared values
             shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
             final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
+            final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
 
             # Apply minimum closeness filter
             if final_closeness >= request.min_closeness:
                 connections.append({
                     "user_id": connected_user_id,
-                    "closeness": round(final_closeness * 100, 2),
+                    "closeness": round(final_closeness, 2),
                     "user_name": connected_user_data.get("user_name", "N/A"),
                     "shared_values": shared_values,
                     "num_shared_values": num_shared_values,
