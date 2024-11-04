@@ -40,11 +40,12 @@ def process_clusters(df: pd.DataFrame):
     df_preprocessed = preprocess_data(df, column_weights)
     logger.info(f"Data preprocessing completed in {time.time() - step_start_time:.2f} seconds.")
 
-    # Dynamically find optimal eps and min_samples
-    step_start_time = time.time()
-    optimal_eps, optimal_min_samples = find_optimal_dbscan(df_preprocessed)
-    logger.info(f"Optimal parameters found: eps={optimal_eps}, min_samples={optimal_min_samples} in {time.time() - step_start_time:.2f} seconds.")
-
+    # # Dynamically find optimal eps and min_samples
+    # step_start_time = time.time()
+    # optimal_eps, optimal_min_samples = find_optimal_dbscan(df_preprocessed)
+    # logger.info(f"Optimal parameters found: eps={optimal_eps}, min_samples={optimal_min_samples} in {time.time() - step_start_time:.2f} seconds.")
+    optimal_eps = 5
+    optimal_min_samples = 2
     # Start an MLflow run
     with mlflow.start_run() as run:
         mlflow.log_param("eps", optimal_eps)
@@ -59,7 +60,7 @@ def process_clusters(df: pd.DataFrame):
         logger.info(f"Clustering completed in {time.time() - step_start_time:.2f} seconds.")
 
         # Save to OpenSearch in batches
-        batch_size = 1000
+        batch_size = 500
         num_batches = (len(df) + batch_size - 1) // batch_size
         batch_number = [0]  # Mutable container to track batches in thread
 
@@ -67,15 +68,15 @@ def process_clusters(df: pd.DataFrame):
         progress_thread = threading.Thread(target=log_progress, args=(batch_number, num_batches, total_start_time))
         progress_thread.start()
 
-        # Store raw data
-        logger.info("Starting to store raw data in OpenSearch...")
-        step_start_time = time.time()
-        for i in range(0, len(df), batch_size):
-            batch_number[0] = i // batch_size + 1
-            batch = df[i:i + batch_size].to_dict(orient="records")
-            for index, doc in enumerate(batch):
-                client.index(index=OS_RAW_INDEX, id=i + index, body=doc)
-        logger.info(f"Raw data storage completed in {time.time() - step_start_time:.2f} seconds.")
+        # # Store raw data
+        # logger.info("Starting to store raw data in OpenSearch...")
+        # step_start_time = time.time()
+        # for i in range(0, len(df), batch_size):
+        #     batch_number[0] = i // batch_size + 1
+        #     batch = df[i:i + batch_size].to_dict(orient="records")
+        #     for index, doc in enumerate(batch):
+        #         client.index(index=OS_RAW_INDEX, id=i + index, body=doc)
+        # logger.info(f"Raw data storage completed in {time.time() - step_start_time:.2f} seconds.")
 
         # Process reduced dimensions and store them in OpenSearch
         logger.info("Starting dimensionality reduction...")
