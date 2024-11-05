@@ -7,3 +7,4 @@ python-multipart
 opensearch-py
 umap-learn
 mlflow
+qdrant-client
