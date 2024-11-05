@@ -1,6 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
-from typing import Optional
 from utils.qdrant_client import get_qdrant_client
 from utils.column_weights import load_column_weights
 from io import StringIO
@@ -15,21 +14,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 qdrant_client = get_qdrant_client()
 
+class UploadDataRequest(BaseModel):
+    collection_name: str
+
 def prepare_vectors(df: pd.DataFrame, column_weights: dict):
     """Preprocesses data based on column weights and prepares vectors for Qdrant."""
     logger.info("Starting data preprocessing...")
-
-    # Keep only numeric columns for vector preparation
-    numeric_cols = df.select_dtypes(include=['number']).columns
     df.fillna(0, inplace=True)  # Fill NaNs with 0s
     vectors = []
 
     for i, row in df.iterrows():
-        vector = [
-            row[col] * column_weights.get(col, 1)
-            for col in numeric_cols
-            if column_weights.get(col, 0) > 0
-        ]
+        vector = [row[col] * column_weights.get(col, 1) for col in df.columns if column_weights.get(col, 0) > 0]
         vectors.append({
             "id": str(row["id"]),
             "vector": vector,
@@ -52,7 +47,6 @@ async def upload_data(collection_name: str = Form(...), file: UploadFile = File(
 
     # Prepare vectors
     vectors = prepare_vectors(df, column_weights)
-    vector_size = len(vectors[0]["vector"])
 
     start_time = time.time()
     uploaded_count = 0
@@ -62,11 +56,10 @@ async def upload_data(collection_name: str = Form(...), file: UploadFile = File(
     try:
         for i, vector in enumerate(vectors):
             try:
+                # Upload individual document without 'vector_size' parameter
                 qdrant_client.upload_collection(
                     collection_name=collection_name,
-                    vectors=[vector["vector"]],
-                    vector_size=vector_size,
-                    payload=[vector["payload"]],
+                    vectors=[vector]
                 )
                 uploaded_count += 1
             except Exception as e:
