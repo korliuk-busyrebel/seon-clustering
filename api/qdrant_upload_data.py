@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 from typing import Optional
 from utils.qdrant_client import get_qdrant_client
@@ -14,9 +14,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 qdrant_client = get_qdrant_client()
-
-class UploadDataRequest(BaseModel):
-    collection_name: str
 
 def prepare_vectors(df: pd.DataFrame, column_weights: dict):
     """Preprocesses data based on column weights and prepares vectors for Qdrant."""
@@ -39,7 +36,7 @@ def prepare_vectors(df: pd.DataFrame, column_weights: dict):
     return vectors
 
 @router.post("/qdrant/upload-data/")
-async def upload_data(request: UploadDataRequest, file: UploadFile = File(...)):
+async def upload_data(collection_name: str = Form(...), file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(StringIO(contents.decode("utf-8")))
 
@@ -59,10 +56,10 @@ async def upload_data(request: UploadDataRequest, file: UploadFile = File(...)):
         for i, vector in enumerate(vectors):
             try:
                 qdrant_client.upload_collection(
-                    collection_name=request.collection_name,
-                    vectors=[vector],
+                    collection_name=collection_name,
+                    vectors=[vector["vector"]],
                     vector_size=vector_size,
-                    payload=1
+                    payload=[vector["payload"]],
                 )
                 uploaded_count += 1
             except Exception as e:
@@ -77,7 +74,7 @@ async def upload_data(request: UploadDataRequest, file: UploadFile = File(...)):
 
         elapsed_time = time.time() - start_time
         logger.info(f"Upload to Qdrant completed. Total uploaded: {uploaded_count}, Skipped documents: {skipped_docs}, Time taken: {elapsed_time:.2f} seconds.")
-        return {"message": f"Data uploaded to Qdrant collection '{request.collection_name}', skipped documents: {skipped_docs}"}
+        return {"message": f"Data uploaded to Qdrant collection '{collection_name}', skipped documents: {skipped_docs}"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload data: {e}")
