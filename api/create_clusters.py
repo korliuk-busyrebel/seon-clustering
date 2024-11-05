@@ -76,41 +76,70 @@ def log_progress(batch_number, total_batches, index_name, start_time):
             f"Indexing {index_name} - Processing batch {batch_number[0]} / {total_batches} ({percent_complete:.2f}%) - Elapsed time: {elapsed_time:.2f} seconds.")
         time.sleep(10)
 
+
 def process_clusters(df: pd.DataFrame):
     logger.info("Starting clustering process...")
     total_start_time = time.time()
 
-    # Load column weights and preprocess the data
-    column_weights = load_column_weights('/app/utils/column_weights.json')
-    df_preprocessed = preprocess_data(df, column_weights)
-    dimension = df_preprocessed.shape[1]
-    create_knn_index_if_needed(dimension)
+    try:
+        # Load column weights and preprocess the data
+        column_weights = load_column_weights('/app/utils/column_weights.json')
+        logger.info("Loaded column weights.")
 
-    # Dynamically calculate optimal DBSCAN parameters
-    optimal_eps, optimal_min_samples = find_optimal_dbscan_params(df_preprocessed)
-    logger.info(f"Optimal DBSCAN parameters: eps={optimal_eps}, min_samples={optimal_min_samples}")
+        df_preprocessed = preprocess_data(df, column_weights)
+        logger.info("Data preprocessing completed.")
 
-    with mlflow.start_run() as run:
-        mlflow.log_param("eps", optimal_eps)
-        mlflow.log_param("min_samples", optimal_min_samples)
+        # Reduce dimensionality early to help with memory constraints in clustering
+        df_preprocessed = reduce_dimensions_optimal(df_preprocessed)
+        logger.info("Dimensionality reduction completed.")
 
+        # Check the dimensions and sample of preprocessed data
+        logger.info(f"Preprocessed data shape: {df_preprocessed.shape}")
+        logger.info(f"Preprocessed data sample: {df_preprocessed.head()}")
+
+        # Create KNN index
+        dimension = df_preprocessed.shape[1]
+        create_knn_index_if_needed(dimension)
+        logger.info(f"Created KNN index with dimension {dimension}.")
+
+        # Calculate optimal DBSCAN parameters on a subset
+        optimal_eps, optimal_min_samples = find_optimal_dbscan_params(df_preprocessed.sample(frac=0.1))
+        logger.info(f"Optimal DBSCAN parameters found: eps={optimal_eps}, min_samples={optimal_min_samples}")
+
+        # Run DBSCAN clustering
         clustering_model = DBSCAN(eps=optimal_eps, min_samples=optimal_min_samples)
         clusters = clustering_model.fit_predict(df_preprocessed)
-        clusters = assign_noise_points(df_preprocessed, clusters)
-        df['cluster'] = clusters
-        logger.info("Clustering completed.")
+        logger.info("DBSCAN clustering completed.")
 
-        # Dimensionality reduction
+        # Assign clusters and check for any clusters labeled as noise (-1)
+        df['cluster'] = clusters
+        noise_points = (clusters == -1).sum()
+        logger.info(f"Total noise points (cluster -1): {noise_points}")
+
+        # Dimensionality reduction for visualization (if needed)
         df_reduced = reduce_dimensions_optimal(df_preprocessed)
         df_reduced = pd.DataFrame(df_reduced, columns=[f"dim_{i + 1}" for i in range(df_reduced.shape[1])])
+        logger.info("Second dimensionality reduction completed for visualization.")
+
+        # Indexing data
+        logger.info("Starting indexing to OpenSearch...")
+        skipped_knn = index_documents_in_batches(df, OS_KNN_INDEX, batch_size=500, batch_number=[0],
+                                                 start_time=total_start_time)
+        logger.info(f"Indexing completed. Skipped KNN documents: {skipped_knn}")
 
         # Log metrics
         silhouette_avg, ch_score, db_score = evaluate_clustering(df_preprocessed, clusters)
         mlflow.log_metric("silhouette_score", silhouette_avg)
         mlflow.log_metric("calinski_harabasz_score", ch_score)
         mlflow.log_metric("davies_bouldin_score", db_score)
+        logger.info("Clustering metrics logged to MLflow.")
 
-    logger.info(f"Clustering process completed. Total Time: {time.time() - total_start_time:.2f} seconds.")
+    except Exception as e:
+        logger.error(f"Error during clustering process: {e}")
+        raise HTTPException(status_code=500, detail=f"Error during clustering process: {e}")
+
+    finally:
+        logger.info(f"Clustering process completed. Total Time: {time.time() - total_start_time:.2f} seconds.")
 
 @router.post("/create-clusters/")
 async def create_clusters(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
