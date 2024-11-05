@@ -18,11 +18,18 @@ qdrant_client = get_qdrant_client()
 def prepare_vectors(df: pd.DataFrame, column_weights: dict):
     """Preprocesses data based on column weights and prepares vectors for Qdrant."""
     logger.info("Starting data preprocessing...")
+
+    # Keep only numeric columns for vector preparation
+    numeric_cols = df.select_dtypes(include=['number']).columns
     df.fillna(0, inplace=True)  # Fill NaNs with 0s
     vectors = []
 
     for i, row in df.iterrows():
-        vector = [row[col] * column_weights.get(col, 1) for col in df.columns if column_weights.get(col, 0) > 0]
+        vector = [
+            row[col] * column_weights.get(col, 1)
+            for col in numeric_cols
+            if column_weights.get(col, 0) > 0
+        ]
         vectors.append({
             "id": str(row["id"]),
             "vector": vector,
