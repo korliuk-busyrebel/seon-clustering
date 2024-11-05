@@ -8,7 +8,6 @@ from datetime import datetime
 column_weights = load_column_weights('/app/utils/column_weights.json')
 column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
-
 # Define request models
 class ConnectionRequest(BaseModel):
     user_id: str
@@ -16,19 +15,14 @@ class ConnectionRequest(BaseModel):
     k: int = 10  # Default nearest neighbors
     index: str = "clustered_knn_data"  # Default index name, can be overridden
 
-
 def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
-    """
-    Extracts shared values between two vectors, ignoring zero-weight fields.
-    Returns a dictionary of shared field names and values.
-    """
+    """Extracts shared values between two vectors, ignoring zero-weight fields."""
     shared_values = {
         column_names[i]: user_vector[i]
         for i in range(len(user_vector))
         if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
     }
     return shared_values
-
 
 @router.post("/user-connections/")
 async def user_connections(request: ConnectionRequest):
@@ -45,16 +39,14 @@ async def user_connections(request: ConnectionRequest):
         user_data = user_search['hits']['hits'][0]["_source"]
         user_vector = user_data.get("vector", [])
 
-        # Confirm `user_vector` is a list of floats and convert if necessary
+        # Convert to list of floats if necessary
         if isinstance(user_vector, str):
-            user_vector = eval(user_vector)  # This should be avoided if input is not trusted
+            user_vector = eval(user_vector)  # Use cautiously if input is untrusted
         elif not isinstance(user_vector, list) or not all(isinstance(x, (float, int)) for x in user_vector):
             raise HTTPException(status_code=400, detail="User vector has invalid dimensions or data types.")
 
-        # Ensure `user_vector` is in correct format
         user_vector = [float(x) for x in user_vector]
-        if len(user_vector) != 898:
-            raise HTTPException(status_code=400, detail="User vector does not have 898 dimensions.")
+        vector_length = len(user_vector)  # Use dynamic length instead of hardcoded 898
 
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error retrieving data for user with id {request.user_id}: {e}")
@@ -87,14 +79,14 @@ async def user_connections(request: ConnectionRequest):
             similarity_score = hit["_score"]
 
             connected_user_vector = connected_user_data.get("vector", [])
-            if not isinstance(connected_user_vector, list) or len(connected_user_vector) != 898:
-                continue
+            if not isinstance(connected_user_vector, list) or len(connected_user_vector) != vector_length:
+                continue  # Skip if vector lengths do not match
 
-            # Calculate shared values using helper function
+            # Calculate shared values
             shared_values = get_shared_values(user_vector, connected_user_vector, column_names, column_weights)
             num_shared_values = len(shared_values)
 
-            # Calculate final closeness score combining OpenSearch similarity and shared values
+            # Calculate final closeness score
             shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
             final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
             final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
@@ -118,7 +110,6 @@ async def user_connections(request: ConnectionRequest):
 
     except Exception as e:
         return {"error": str(e)}
-
 
 # Export the router for use in the main app
 user_connections = router
