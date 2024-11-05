@@ -24,7 +24,10 @@ def prepare_vectors(df: pd.DataFrame, column_weights: dict):
     vectors = []
 
     for i, row in df.iterrows():
-        vector = [row[col] * column_weights.get(col, 1) for col in df.columns if column_weights.get(col, 0) > 0]
+        vector = [
+            float(row[col]) * column_weights.get(col, 1) if isinstance(row[col], (int, float)) else 0
+            for col in df.columns if column_weights.get(col, 0) > 0
+        ]
         vectors.append({
             "id": str(row["id"]),
             "vector": vector,
