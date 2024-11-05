@@ -39,19 +39,27 @@ def create_knn_index_if_needed(dimension):
     else:
         logger.info(f"KNN index '{index_name}' already exists.")
 
-def find_optimal_dbscan_params(df):
-    """Finds optimal eps and min_samples for DBSCAN based on minimum noise points."""
-    best_eps = 5  # Default value for eps
-    best_min_samples = 2  # Default value for min_samples
-    min_noise_ratio = 1.0
+def find_optimal_dbscan_params(df, sample_fraction=0.1, eps_values=[5, 10, 15], min_samples_values=range(2, 5)):
+    """
+    Finds optimal eps and min_samples for DBSCAN by testing on a sample of the data
+    to minimize noise points, with reduced memory usage.
+    """
+    # Sample a fraction of the dataset to reduce memory and computation
+    sample_size = int(len(df) * sample_fraction)
+    df_sample = df.sample(n=sample_size, random_state=42) if sample_size > 0 else df
 
-    # Experiment with various eps and min_samples values to minimize noise points
-    for eps in [5, 10, 15]:  # Example range for eps
-        for min_samples in range(2, 5):  # Example range for min_samples
+    best_eps = eps_values[0]
+    best_min_samples = min_samples_values[0]
+    min_noise_ratio = 1.0  # Initialize with the highest possible noise ratio
+
+    # Iterate over the range of eps and min_samples values
+    for eps in eps_values:
+        for min_samples in min_samples_values:
             dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-            labels = dbscan.fit_predict(df)
-            noise_ratio = list(labels).count(-1) / len(labels)
+            labels = dbscan.fit_predict(df_sample)
+            noise_ratio = np.sum(labels == -1) / len(labels)
 
+            # Track the best eps and min_samples with the lowest noise ratio
             if noise_ratio < min_noise_ratio:
                 min_noise_ratio = noise_ratio
                 best_eps = eps

@@ -14,11 +14,11 @@ class ClassifyRequest(BaseModel):
 
 @router.post("/classify-record/")
 async def classify_record(request: ClassifyRequest):
-    # Load column weights to define required fields (all 898 fields expected)
+    # Load column weights to define required fields
     column_weights = load_column_weights('/app/utils/column_weights.json')
     required_fields = list(column_weights.keys())
 
-    # Fill missing fields with default value (0) to ensure exactly 898 fields in input
+    # Fill missing fields with default value (0)
     input_record = {**{field: 0 for field in required_fields}, **request.record}
     record_data = pd.DataFrame([input_record])
 
