@@ -1,106 +1,83 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from utils.opensearch_client import client, router
+from typing import List
+from utils.qdrant_client import get_qdrant_client
 from utils.column_weights import load_column_weights
 from datetime import datetime
+import numpy as np
+
+router = APIRouter()
+qdrant_client = get_qdrant_client()
 
 # Load column weights for closeness calculations
 column_weights = load_column_weights('/app/utils/column_weights.json')
 column_names = list(column_weights.keys())  # Get the list of feature names in the correct order
 
-# Define request model with an optional index parameter
-class MultiUserRequest(BaseModel):
-    user_ids: list
+class MultiUserAnalysisRequest(BaseModel):
+    user_ids: List[str]
     min_closeness: float = 0.5  # Minimum closeness threshold
-    index: str = "clustered_knn_data"  # Default index name, can be overridden in the request
-    k: int = 100  # Default number of users to retrieve from the cluster, can be overridden
+    k: int = 10  # Default number of nearest neighbors
+    collection_name: str  # Qdrant collection name
 
-@router.post("/multi-user-analysis/")
-async def multi_user_analysis(request: MultiUserRequest):
-    results = []
+def get_shared_values(user_vector, connected_user_vector, column_names, column_weights):
+    """
+    Extracts shared values between two vectors, ignoring zero-weight fields.
+    Returns a dictionary of shared field names and values.
+    """
+    shared_values = {
+        column_names[i]: user_vector[i]
+        for i in range(len(user_vector))
+        if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
+    }
+    return shared_values
 
-    for user_id in request.user_ids:
-        user_index = request.index
+@router.post("/qdrant/multi-user-analysis/")
+async def multi_user_analysis(request: MultiUserAnalysisRequest):
+    results = {}
 
-        # Retrieve user data by `id` field
-        try:
-            print(f"Fetching data for user_id: {user_id}")
-            user_data_query = {"query": {"term": {"id": user_id}}}
-            user_search = client.search(index=user_index, body=user_data_query)
-
-            if not user_search['hits']['hits']:
-                print(f"User with id {user_id} not found in index {user_index}.")
+    try:
+        for user_id in request.user_ids:
+            # Retrieve user vector from Qdrant
+            query_vector = qdrant_client.get_vector(
+                collection_name=request.collection_name, vector_id=user_id
+            )
+            if not query_vector:
+                print(f"User with id {user_id} not found in collection {request.collection_name}.")
                 continue
 
-            user_data = user_search['hits']['hits'][0]["_source"]
-            user_vector = user_data.get("vector", [])
-
-            # Ensure `user_vector` is a list of floats
-            if isinstance(user_vector, str):
-                print(f"Converting user_vector from string to list for user_id: {user_id}")
-                user_vector = eval(user_vector)  # Caution with eval in production
-            user_vector = [float(x) for x in user_vector]  # Ensure list of floats
-
-            print(f"user_vector for user_id {user_id} is now: {user_vector[:10]}...")  # Show first 10 values for debugging
-
-            if not isinstance(user_vector, list) or len(user_vector) != 898:
-                print(f"User vector for user_id {user_id} is missing or has incorrect dimensions.")
-                continue
-
-        except Exception as e:
-            print(f"Error retrieving data for user with id {user_id}: {e}")
-            continue
-
-        # Perform KNN search using OpenSearch KNN plugin
-        knn_query = {
-            "size": request.k,
-            "query": {
-                "knn": {
-                    "vector": {
-                    "vector": list(user_vector),  # Ensure it is a proper list format
-                    "k": request.k
-                    }
-                }
-            }
-        }
-
-        try:
-            print(f"Performing KNN search for user_id: {user_id} with query_vector of type: {type(user_vector)}")
-            cluster_response = client.search(index=user_index, body=knn_query)
-            cluster_users = cluster_response['hits']['hits']
-            print(f"Found {len(cluster_users)} users in cluster for user_id {user_id}")
+            # Perform similarity search in Qdrant
+            response = qdrant_client.search(
+                collection_name=request.collection_name,
+                query_vector=query_vector,
+                limit=request.k,
+            )
 
             closest_users = []
-            for connected_user in cluster_users:
-                connected_user_data = connected_user["_source"]
+            for hit in response:
+                connected_user_data = hit["payload"]
                 connected_user_id = connected_user_data.get("id")
 
                 # Exclude the requested user_id from results
                 if connected_user_id == user_id:
                     continue
 
-                # Get similarity score from OpenSearch's KNN plugin
-                similarity_score = connected_user["_score"]
-                print(f"Similarity score for connected_user_id {connected_user_id}: {similarity_score}")
+                # Retrieve similarity score
+                similarity_score = hit["score"]
 
+                # Retrieve and validate connected user vector
                 connected_user_vector = connected_user_data.get("vector", [])
-                if not isinstance(connected_user_vector, list) or len(connected_user_vector) != 898:
+                if not isinstance(connected_user_vector, list) or len(connected_user_vector) != len(query_vector):
                     print(f"Skipping connected_user_id {connected_user_id} due to invalid vector.")
                     continue
 
-                # Extract shared values
-                shared_values = {
-                    column_names[i]: user_vector[i]
-                    for i in range(len(user_vector))
-                    if user_vector[i] == connected_user_vector[i] and column_weights.get(column_names[i], 0.0) != 0.0
-                }
+                # Calculate shared values
+                shared_values = get_shared_values(query_vector, connected_user_vector, column_names, column_weights)
                 num_shared_values = len(shared_values)
-                print(f"Shared values for connected_user_id {connected_user_id}: {shared_values}")
 
-                # Calculate a final closeness score
+                # Calculate final closeness score
                 shared_value_score = sum(column_weights.get(key, 1) for key in shared_values) / sum(column_weights.values())
                 final_closeness = 0.7 * similarity_score + 0.3 * shared_value_score
-                final_closeness = min(final_closeness * 100, 100)
+                final_closeness = min(final_closeness * 100, 100)  # Ensure it's between 0-100
 
                 # Apply minimum closeness filter
                 if final_closeness >= request.min_closeness:
@@ -114,14 +91,11 @@ async def multi_user_analysis(request: MultiUserRequest):
                         "earliest_date_of_sharing": connected_user_data.get("share_date", datetime.now().isoformat())
                     })
 
-            results.append({user_id: closest_users})
+            results[user_id] = sorted(closest_users, key=lambda x: -x["closeness"])
 
-        except Exception as e:
-            print(f"Error retrieving KNN results for user with id {user_id}: {e}")
-            continue
+        return {"connected_users_per_user": results}
 
-    return {"connected_users_per_user": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to perform multi-user analysis: {e}")
 
-
-# Export the router for integration into the main FastAPI app
-multi_user_analysis = router
+qdrant_multi_user_analysis = router

@@ -6,6 +6,12 @@ from api.create_clusters import create_clusters
 from api.classify_record import classify_record
 from api.multi_user_analysis import multi_user_analysis
 from api.user_connections import user_connections
+from api.analyze_filter_csv import analyze_filter_csv
+from api.analyze_ordered_unique_value_counts import analyze_ordered_unique_value_counts
+from api.qdrant_upload_data import router as qdrant_upload_data_router
+from api.qdrant_user_connections import router as qdrant_user_connections_router
+from api.qdrant_multi_user_analysis import router as qdrant_multi_user_analysis_router
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -19,6 +25,11 @@ app.include_router(create_clusters)
 app.include_router(classify_record)
 app.include_router(multi_user_analysis)
 app.include_router(user_connections)
+app.include_router(analyze_filter_csv)
+app.include_router(analyze_ordered_unique_value_counts)
+app.include_router(qdrant_upload_data_router)
+app.include_router(qdrant_user_connections_router)
+app.include_router(qdrant_multi_user_analysis_router)
 
 # Middleware to log the execution time of each request
 @app.middleware("http")
